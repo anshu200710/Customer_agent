@@ -1,0 +1,31 @@
+PURPOSE OF CALL
+
+
+
+Purpose of the AI Voice Call System
+The primary goal of this system is to automate the JCB Service Desk, ensuring that every customer complaint is recorded accurately and instantly without needing a human agent to answer every call.
+
+24/7 Availability: Customers can register complaints at any time (nights, holidays, or weekends).
+Instant Machine Verification: The AI instantly checks the machine number against your database to identify the owner and model, reducing manual data entry errors.
+Structured Data Collection: It ensures every complaint has a valid machine number, a clear problem description, a verified phone number, and a specific location.
+Operational Efficiency: By the time a service manager looks at the dashboard, the complaint is already logged with all the necessary details, allowing the technician to be dispatched immediately.
+🛠️ How to Proceed (The Workflow)
+To get the most out of this system, here is the standard procedure for a customer call:
+
+Step 1: The Initial Greeting
+The customer calls the service number. The AI welcomes them professionally: "Namaskar. JCB service center mein aapka swagat hai..."
+
+Step 2: Machine Identification
+Customer Action: The user says their machine number (e.g., "Mera machine number 33 05447 hai").
+System Action: The AI cleans the audio, extracts the digits, and fetches the customer’s name and machine details from the database.
+Step 3: Complaint Recording
+Customer Action: The user explains the issue (e.g., "Engine start nahi ho raha").
+System Action: The AI records this as the complaint_details.
+Step 4: Detail Verification
+Customer Action: The user confirms if the calling number is correct or provides a new one. They also state their city or branch.
+System Action: The AI uses "Intent Detection" to understand if the user wants to Confirm or Change their details, ensuring the contact info is 100% accurate.
+Step 5: Final Submission
+Customer Action: The user hears a summary and says "Haan, submit kar do" (Yes, submit it).
+System Action: The AI sends the full data package to the JCB Complaint API. The call ends with a polite thank-you message.
+📈 Business Outcome
+When the call ends, your backend system automatically receives a completed complaint entry in the same format as a manual entry, including Machine Model, Customer Name, and job location, ready for your service team to take action.
