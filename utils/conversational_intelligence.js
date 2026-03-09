@@ -14,15 +14,15 @@
    INTENT ENUM
    ===================================================================== */
 export const INTENT = {
-  REPEAT:       'REPEAT',       // "dobara boliye", "kya kaha", "suna nahi"
-  WAIT:         'WAIT',         // "ruko", "ek minute", "machine dekke btata hu"
-  CONFUSED:     'CONFUSED',     // "kya", "samajh nahi", "matlab"
-  CHECKING:     'CHECKING',     // "check kar raha hu", "machine dekh raha hu"
+  REPEAT: 'REPEAT',       // "dobara boliye", "kya kaha", "suna nahi"
+  WAIT: 'WAIT',         // "ruko", "ek minute", "machine dekke btata hu"
+  CONFUSED: 'CONFUSED',     // "kya", "samajh nahi", "matlab"
+  CHECKING: 'CHECKING',     // "check kar raha hu", "machine dekh raha hu"
   SPELLING_OUT: 'SPELLING_OUT', // customer slowly spelling letters/numbers
-  GREETING:     'GREETING',     // "haan", "hello", "ji" as first word
-  HELP:         'HELP',         // "help", "kya karna hai", "guide karo"
-  COMPLAINT_DONE:'COMPLAINT_DONE', // "bas itna hi", "aur kuch nahi", "yahi problem hai"
-  NORMAL:       'NORMAL',       // no special handling needed
+  GREETING: 'GREETING',     // "haan", "hello", "ji" as first word
+  HELP: 'HELP',         // "help", "kya karna hai", "guide karo"
+  COMPLAINT_DONE: 'COMPLAINT_DONE', // "bas itna hi", "aur kuch nahi", "yahi problem hai"
+  NORMAL: 'NORMAL',       // no special handling needed
 };
 
 /* =====================================================================
@@ -144,9 +144,10 @@ const CONFUSED_PATTERNS = [
   'mujhe nahi pata', 'pata nahi', 'pata nahi bhai',
   'yeh number kya hain', 'yeh city ke liye kya',
   'shayad', 'maybe', 'ho sakta hai', 'sambhav hai',
-  /* Additional confusion indicators */
   'samajh me nahi aaya', 'clear nahi ho raha', 'confuse error',
   'thoda aur samjhao', 'turant samajh me nahi aaya',
+  'meri baat sun', 'meri baat suno', 'baat nahi sunte', 'sunte ho kya',
+  'kaun bol', 'kaun bol raha', 'aap kaun', 'kisse baat ho rahi',
   // English / Hinglish
   'what do you mean', 'what does that mean', 'i dont understand',
   'i do not understand', 'confused', 'not clear',
@@ -168,8 +169,9 @@ const CONFUSED_PATTERNS = [
   'पहली बार कॉल कर रहा हू', 'यह क्या नंबर है',
   'मुझे नहीं पता', 'पता नहीं', 'समझ में नहीं आया',
   'गाइड करो', 'समझा दो', 'साफ़ करके बोलो',
-  'मुझे गाइड करो', 'गाइड कर दे', 'बता दे',
   'शायद', 'हो सकता है', 'संभव है',
+  'मेरी बात सुन', 'बात नहीं सुनते', 'सुनते हो क्या', 'सुन रहे हो',
+  'कौन बोल रहा', 'आप कौन', 'कौन है ये', 'किससे बात',
 ];
 
 /* =====================================================================
@@ -276,8 +278,8 @@ export function detectConversationalIntent(rawSpeech) {
   const wordCount = t.split(/\s+/).filter(w => w.length > 0).length;
 
   // Priority order: CHECKING > WAIT > REPEAT > CONFUSED > HELP > COMPLAINT_DONE
-  if (CHECKING_PATTERNS.some(p => t.includes(p)))  { console.log(`[CI] CHECKING`); return INTENT.CHECKING; }
-  if (WAIT_PATTERNS.some(p => t.includes(p)))       { console.log(`[CI] WAIT`);     return INTENT.WAIT; }
+  if (CHECKING_PATTERNS.some(p => t.includes(p))) { console.log(`[CI] CHECKING`); return INTENT.CHECKING; }
+  if (WAIT_PATTERNS.some(p => t.includes(p))) { console.log(`[CI] WAIT`); return INTENT.WAIT; }
 
   // REGEX WAIT: catch numeric time expressions — "1 मिनट", "2 minute", "5 min"
   // Pattern-based lists only cover word-form ("ek minute"), this catches digit-form
@@ -286,9 +288,9 @@ export function detectConversationalIntent(rawSpeech) {
     return INTENT.WAIT;
   }
 
-  if (REPEAT_PATTERNS.some(p => t.includes(p)))   { console.log(`[CI] REPEAT`);   return INTENT.REPEAT; }
+  if (REPEAT_PATTERNS.some(p => t.includes(p))) { console.log(`[CI] REPEAT`); return INTENT.REPEAT; }
   if (CONFUSED_PATTERNS.some(p => t.includes(p))) { console.log(`[CI] CONFUSED`); return INTENT.CONFUSED; }
-  if (HELP_PATTERNS.some(p => t.includes(p)))     { console.log(`[CI] HELP`);     return INTENT.HELP; }
+  if (HELP_PATTERNS.some(p => t.includes(p))) { console.log(`[CI] HELP`); return INTENT.HELP; }
 
   // FIX: Short single-word triggers like "bas" only fire COMPLAINT_DONE
   // when the utterance itself is short (< 5 words).
@@ -395,7 +397,7 @@ export function getConfusedResponse(callData) {
     return stepHints[Math.floor(Math.random() * stepHints.length)];
   }
   return "Koi baat nahi. Main aapki madad karta hoon. " +
-         (callData.lastQuestion || "Apna jawab clearly boliye.");
+    (callData.lastQuestion || "Apna jawab clearly boliye.");
 }
 
 /**
@@ -420,12 +422,12 @@ export function getHelpResponse(callData) {
   const step = callData.step || '';
   if (step === 'ask_complaint') {
     return "Main complaint register karne mein help kar raha hoon. " +
-           "Bas machine ki problem batayein — engine, gear, brake, hydraulic, AC — " +
-           "jo bhi kharaabi ho. Agent se baat karni ho to do dabayein.";
+      "Bas machine ki problem batayein — engine, gear, brake, hydraulic, AC — " +
+      "jo bhi kharaabi ho. Agent se baat karni ho to do dabayein.";
   }
   return "Main aapki madad ke liye hoon. " +
-         "Agar agent se baat karni ho to phone pe do dabayein. " +
-         "Warna " + (callData.lastQuestion || "apna jawab boliye.");
+    "Agar agent se baat karni ho to phone pe do dabayein. " +
+    "Warna " + (callData.lastQuestion || "apna jawab boliye.");
 }
 
 /* =====================================================================

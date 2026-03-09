@@ -232,8 +232,11 @@ router.post('/process', async (req, res) => {
       console.log(`   🔢 Fast-extract digits: "${newDigits}"`);
 
       // Step 2: AI fallback when fast-extract gives 0 digits but sentence has some content
-      // This handles complex sentences like "मेरे machine का नंबर है ..." with embedded digits
-      if (newDigits.length === 0 && rawInput.trim().length > 2) {
+      // Prevent wasting AI calls on short, non-numeric words like "ओपन!" or "ऑटोमेटिक!"
+      const hasNumberLike = /\d/.test(rawInput) || /[a-zA-Z0-9]/.test(rawInput); // Has some alphanumeric (could be spelled out in English)
+      const isLongSentence = rawInput.trim().split(/\s+/).length >= 3;
+      
+      if (newDigits.length === 0 && (hasNumberLike || isLongSentence) && rawInput.trim().length > 2) {
         console.log(`   🤖 No digits found — trying AI extraction...`);
         try {
           const aiExtracted = await extractMachineNumber(rawInput);
@@ -382,6 +385,9 @@ router.post('/process', async (req, res) => {
 
     // ============ STEP 2: ASK PROBLEM ============
     else if (callData.step === "ask_problem") {
+      // Fix common STT phonetic mishearings
+      rawInput = rawInput.replace(/इंडियन/g, "इंजन").replace(/Indian/gi, "Engine");
+
       const ci = handleConversationalIntent(rawInput, callData);
       if (ci.handled) {
         ask(twiml, ci.response);
@@ -577,14 +583,14 @@ router.post('/process', async (req, res) => {
       if (digits.length >= 10) {
         const newPhone = digits.slice(-10);
         // Validate Indian mobile: must start with 6,7,8,9
-        if (!["6","7","8","9"].includes(newPhone[0])) {
+        if (!["6", "7", "8", "9"].includes(newPhone[0])) {
           askNumber(twiml, `Yeh number valid nahi — ${newPhone[0]} se start ho raha hai. 6, 7, 8 ya 9 se shuru hona chahiye. Dobara boliye.`);
           activeCalls.set(CallSid, callData);
           return res.type("text/xml").send(twiml.toString());
         }
         callData.tempPhone = newPhone;
         callData.step = "verify_new_phone";
-        const formattedPhone = `${newPhone.slice(0,5)} ${newPhone.slice(5)}`;
+        const formattedPhone = `${newPhone.slice(0, 5)} ${newPhone.slice(5)}`;
         callData.lastQuestion = `Naya number ${formattedPhone} hai. Sahi hai?`;
         ask(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);

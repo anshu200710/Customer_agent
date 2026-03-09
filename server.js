@@ -4,7 +4,8 @@ import bodyParser from 'body-parser';
 
 
 import outboundRoutes from './routes/outbound.js';
-import voiceAiRoutes from './routes/voice_ai.js';
+import voiceAiRoutes from './routes/voice_simple.js';
+// import voiceAiRoutes from './routes/voice_ai.js';
 
 
 const app = express();
