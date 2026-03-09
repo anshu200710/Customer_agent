@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const REQUEST_TIMEOUT = 15000; // 15 seconds
+const REQUEST_TIMEOUT = 10000; // Reduced to 10 seconds for faster failure/fallback
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 500; // ms
 
@@ -14,12 +14,12 @@ async function makeGroqAPICall(messages, options, attempt = 1) {
     const response = await axios.post(
       GROQ_API_URL,
       {
-        model: 'llama-3.1-8b-instant', // Using larger model for better Hindi support
+        model: 'llama-3.1-8b-instant', 
         messages: messages,
-        temperature: options.temperature || 0.3, // Lower temp for consistency
-        max_tokens: options.max_tokens || 512,
+        temperature: 0.1, // Lower for speed and accuracy
+        max_tokens: options.max_tokens || 100, // Faster responses
         top_p: 0.9,
-        stop: ["END_TURN", "---"] // Stop tokens to prevent rambling
+        stop: ["END_TURN", "---", "\n"] // More stop tokens
       },
       {
         headers: {
@@ -143,6 +143,26 @@ EXAMPLES:
  * Optimized for yes/no/change detection
  */
 export async function detectIntent(userText, context) {
+  const normalizedText = (userText || "").trim().toLowerCase();
+  
+  // 1. REGEX FAST-PATH (Instant detection for unambiguous words)
+  // YES / CONFIRM patterns
+  if (/^(haan|han|ha|yes|sahi|thik|theek|ok|okay|confirm|ji|ji haan|ji han)$/.test(normalizedText)) {
+    console.log(`[Intent Detection] Fast-path Match: CONFIRM`);
+    return "CONFIRM";
+  }
+  // NO / CHANGE patterns
+  if (/^(nahi|nahin|na|no|badalna|galat|change|nhi|ni)$/.test(normalizedText)) {
+    console.log(`[Intent Detection] Fast-path Match: CHANGE`);
+    return "CHANGE";
+  }
+  // REPEAT patterns
+  if (/^(repeat|fir|phir|dobara|again|kya|bolye)$/.test(normalizedText)) {
+    console.log(`[Intent Detection] Fast-path Match: REPEAT`);
+    return "REPEAT";
+  }
+
+  // 2. AI FALLBACK (For complex phrasing or "confusion")
   const systemPrompt = {
     role: "system",
     content: `You are an expert at understanding user intent in Hindi/English voice calls.
@@ -173,11 +193,16 @@ Examples:
       { max_tokens: 10, temperature: 0.1 }
     );
 
-    const intent = response.toUpperCase().trim();
+    const intent = response.trim().split(/\s+/)[0].toUpperCase().replace(/[^A-Z]/g, '');
     const validIntents = ["CONFIRM", "CHANGE", "REPEAT", "OTHER"];
 
     if (validIntents.includes(intent)) {
       return intent;
+    }
+
+    // Secondary check if the word is contained
+    for (const v of validIntents) {
+        if (intent.includes(v)) return v;
     }
 
     // Fallback if response is unclear
@@ -271,15 +296,27 @@ const DIGIT_WORD_MAP = {
 };
 
 const IGNORE_WORDS = new Set([
-  "mera", "meri", "mere", "hamara", "hamaara", "number", "no", "num", "nmbr",
-  "machine", "chassis", "engine", "hai", "hain", "he", "ha", "h", "ka", "ki",
-  "ke", "ko", "se", "par", "pe", "aapka", "apna", "mhara", "mharo", "phone",
-  "mobile", "contact", "call", "batata", "bata", "bolunga", "yeh", "ye", "yahi",
-  "vo", "wo", "aur", "bhi", "sirf", "bas", "the", "a", "an", "is", "and", "or",
-  "my", "your", "okay", "ok", "theek", "thik", "haan", "ji", "yes",
-  "नंबर", "नम्बर", "मशीन", "मेरा", "मेरी", "मेरे", "आपका", "आपकी", "फ़ोन",
-  "मोबाइल", "है", "हैं", "का", "की", "के", "को", "से",
+  "mera", "meri", "mere", "hamara", "hamaara", "mhara", "mhari", "mhare", "tharo", "thari", "thare",
+  "number", "no", "num", "nmbr", "machine", "chassis", "engine", "hai", "hain", "he", "ha", "h",
+  "ka", "ki", "ke", "ko", "se", "par", "pe", "aapka", "apna", "phone", "mobile", "contact", 
+  "call", "batata", "bata", "bolunga", "yeh", "ye", "yahi", "vo", "wo", "aur", "bhi", "sirf", "bas",
+  "फ़ोन", "मोबाइल", "है", "हैं", "का", "की", "के", "को", "से",
 ]);
+
+/* ======================= PHONETIC CITY MATCHING (Common Mishearings) ======================= */
+const PHONETIC_CITY_MAP = {
+  "SONG": "TONK",
+  "SONGASH": "TONK",
+  "SONGARH": "TONK",
+  "SONKGARH": "TONK",
+  "सोंग": "TONK",
+  "सॉन्ग": "TONK",
+  "सोनगढ़": "TONK",
+  "सोनगढ": "TONK",
+  "UDAI": "UDAIPUR",
+  "VK": "VKIA",
+  "VKI": "VKIA",
+};
 
 /**
  * Extract only digits from text based on mapping and patterns
@@ -334,13 +371,26 @@ export async function findBestServiceCenterMatch(userInput) {
   );
   if (exactMatch) return exactMatch;
 
-  // 2. Partial Match
+  // 2. PHONETIC/Common Mishearing Match
+  for (const [key, val] of Object.entries(PHONETIC_CITY_MAP)) {
+    if (cleanInput.includes(key)) {
+      const match = SERVICE_CENTERS.find(sc => sc.city_name === val);
+      if (match) {
+        console.log(`[City Match] Phonetic Map Hit: "${key}" -> "${val}"`);
+        return match;
+      }
+    }
+  }
+
+  // 3. Partial Match (Improved)
   const partialMatch = SERVICE_CENTERS.find(sc => 
-    cleanInput.includes(sc.city_name) || sc.city_name.includes(cleanInput)
+    cleanInput.includes(sc.city_name) || 
+    sc.city_name.includes(cleanInput) ||
+    (sc.branch_name && (cleanInput.includes(sc.branch_name) || sc.branch_name.includes(cleanInput)))
   );
   if (partialMatch) return partialMatch;
 
-  // 3. AI Match for noisy/Hinglish input
+  // 3. AI Match for noisy/Hinglish input (Last Resort)
   console.log(`[City Match] Using AI for: "${userInput}"`);
   const citiesList = SERVICE_CENTERS.map(sc => sc.city_name).join(", ");
   
@@ -352,8 +402,9 @@ export async function findBestServiceCenterMatch(userInput) {
       
       RULES:
       1. Return ONLY the city name from the list.
-      2. If NO match is even remotely likely, return: NONE.
-      3. Handle Hindi, English, and Hinglish pronunciation variations.`
+      2. If NO match is found, return: NONE.
+      3. VERY IMPORTANT: Phonetic "Song" or "Sone" usually means "TONK".
+      4. Handle Rajasthani dialect and pronunciation variations.`
     },
     {
       role: "user",
@@ -362,21 +413,51 @@ export async function findBestServiceCenterMatch(userInput) {
   ];
 
   try {
-    const response = await askGroqAI(prompt, { max_tokens: 20, temperature: 0.1 });
-    const matchedCity = response.trim().toUpperCase();
+    const startTime = Date.now();
+    const response = await askGroqAI(prompt, { max_tokens: 50, temperature: 0.1 }); // Increased tokens for rambling tolerance
+    const duration = Date.now() - startTime;
+    console.log(`[City Match] AI took ${duration}ms. Response: "${response}"`);
 
-    if (matchedCity !== "NONE") {
-      const aiMatch = SERVICE_CENTERS.find(sc => sc.city_name === matchedCity);
-      if (aiMatch) {
-        console.log(`[City Match] AI matched "${userInput}" to "${matchedCity}"`);
-        return aiMatch;
+    const upperResponse = response.toUpperCase();
+    // Robust extraction: find the city name from our list WITHIN the AI response
+    for (const sc of SERVICE_CENTERS) {
+      if (upperResponse.includes(sc.city_name.toUpperCase())) {
+        console.log(`[City Match] Extracted "${sc.city_name}" from AI response`);
+        return sc;
       }
     }
+
+    if (upperResponse.includes("NONE") || upperResponse.includes("UNKNOWN")) return null;
+
   } catch (err) {
     console.error(`[City Match] AI Error:`, err.message);
   }
 
   return null;
+}
+
+/**
+ * Translate Hindi text to English for payload submission
+ */
+export async function translateToEnglish(text) {
+  if (!text || text.length < 2) return text;
+  
+  console.log(`[Translation] Translating: "${text}"`);
+  try {
+    const response = await askGroqAI([
+      { 
+        role: "system", 
+        content: "You are a professional translator. Translate the following Hindi/Hinglish text to clear, concise English for a technical complaint report. Return ONLY the translated text, no explanations." 
+      },
+      { role: "user", content: text }
+    ], { max_tokens: 150, temperature: 0.1 });
+    
+    console.log(`[Translation] Result: "${response}"`);
+    return response.trim();
+  } catch (err) {
+    console.error("[Translation] Error:", err.message);
+    return text; // Fallback to original
+  }
 }
 
 export default {
@@ -387,6 +468,7 @@ export default {
   validateComplaintText,
   extractOnlyDigits,
   isValidChassisFormat,
-  findBestServiceCenterMatch
+  findBestServiceCenterMatch,
+  translateToEnglish
 };
 
