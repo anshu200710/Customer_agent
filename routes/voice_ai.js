@@ -1,8 +1,14 @@
 import express from 'express';
 import twilio from 'twilio';
 import axios from 'axios';
-import { askGroqAI, extractOnlyDigits, isValidChassisFormat, detectIntent, findBestServiceCenterMatch, translateToEnglish } from '../utils/ai_agent.js';
+import { askGroqAI, extractOnlyDigits, extractMachineNumber, isValidChassisFormat, detectIntent, findBestServiceCenterMatch, translateToEnglish } from '../utils/ai_agent.js';
 import { categorizeProblem, validateProblem } from '../utils/complaint_mapper.js';
+import {
+  handleConversationalIntent,
+  handleSilenceOrEmpty,
+  getSmartPrompt,
+  INTENT,
+} from "../utils/conversational_intelligence.js";
 
 const router = express.Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -15,12 +21,7 @@ const COMPLAINT_API_URL = "http://gprs.rajeshmotors.com/jcbServiceEnginerAPIv7/a
 const API_TIMEOUT = 20000;
 const API_HEADERS = { JCBSERVICEAPI: "MakeInJcb" };
 
-/* ======================= INTENTS ======================= */
-const INTENT = {
-  WAIT: "wait",
-  CHECKING: "checking",
-  CANCEL: "cancel",
-};
+// INTENT is now imported from conversational_intelligence.js
 
 /**
  * Helper to gather speech/DTMF for numbers
@@ -60,18 +61,7 @@ function ask(twiml, msg) {
   }, msg);
 }
 
-function handleConversationalIntent(text, callData) {
-  if (!text) return { handled: false };
-  const t = text.toLowerCase();
-
-  if (t.includes("ruko") || t.includes("wait") || t.includes("ek minute") || t.includes("rukiye")) {
-    return { handled: true, intent: INTENT.WAIT, response: "Ji, main ruka hoon. Boliye." };
-  }
-  if (t.includes("check") || t.includes("dekhta hoon") || t.includes("dekh ke")) {
-    return { handled: true, intent: INTENT.CHECKING, response: "Theek hai, aap dekh lijiye. Main sun raha hoon." };
-  }
-  return { handled: false };
-}
+// Basic conversational intent handler removed. Using the advanced one from utils.
 
 async function validateChassisViaAPI(chassisNo) {
   try {
@@ -194,7 +184,6 @@ router.post('/process', async (req, res) => {
   const { CallSid, SpeechResult, Digits } = req.body;
   const twiml = new VoiceResponse();
   const callData = activeCalls.get(CallSid);
-
   if (!callData) {
     console.log(`[Call ${CallSid}] ❌ Call data not found, disconnecting`);
     twiml.say({ voice: "Google.hi-IN-Wavenet-D", language: "hi-IN" }, "Session expire ho gaya. Kripya dobara call karein.");
@@ -204,6 +193,19 @@ router.post('/process', async (req, res) => {
 
   const rawInput = (SpeechResult || Digits || "").trim();
   console.log(`[Call ${CallSid}] Step: ${callData.step} | Input: "${rawInput}"`);
+
+  // Silence / empty input — repeat last question using smart rotate
+  if (!rawInput) {
+    callData.retries = (callData.retries || 0) + 1;
+    const silenceMsg = handleSilenceOrEmpty(callData);
+    if (callData.step === "ask_machine_no") {
+      askNumber(twiml, silenceMsg);
+    } else {
+      ask(twiml, silenceMsg);
+    }
+    activeCalls.set(CallSid, callData);
+    return res.type("text/xml").send(twiml.toString());
+  }
 
   try {
     // ============ STEP 1: ASK MACHINE NUMBER ============
@@ -218,13 +220,35 @@ router.post('/process', async (req, res) => {
         return res.type("text/xml").send(twiml.toString());
       }
 
-      const newDigits = extractOnlyDigits(rawInput);
-      console.log(`   🔢 New digits this turn: "${newDigits}"`);
-
+      // BUG FIX: Always clear buffer on fresh start BEFORE appending new digits
       if (callData.machineNoFreshStart) {
         callData.partialMachineNo = "";
         callData.machineNoFreshStart = false;
+        console.log(`   🔄 Fresh start: buffer cleared`);
       }
+
+      // Step 1: Fast extraction via digit-word map
+      let newDigits = extractOnlyDigits(rawInput);
+      console.log(`   🔢 Fast-extract digits: "${newDigits}"`);
+
+      // Step 2: AI fallback when fast-extract gives 0 digits but sentence has some content
+      // This handles complex sentences like "मेरे machine का नंबर है ..." with embedded digits
+      if (newDigits.length === 0 && rawInput.trim().length > 2) {
+        console.log(`   🤖 No digits found — trying AI extraction...`);
+        try {
+          const aiExtracted = await extractMachineNumber(rawInput);
+          if (aiExtracted && aiExtracted !== "NONE" && /^\d+$/.test(aiExtracted)) {
+            newDigits = aiExtracted;
+            console.log(`   🤖 AI extracted: "${newDigits}"`);
+          } else {
+            console.log(`   🤖 AI also found no number: "${aiExtracted}"`);
+          }
+        } catch (e) {
+          console.log(`   🤖 AI extraction failed: ${e.message}`);
+        }
+      }
+
+      console.log(`   🔢 New digits this turn: "${newDigits}"`);
 
       callData.partialMachineNo = (callData.partialMachineNo || "") + newDigits;
       const accumulated = callData.partialMachineNo;
@@ -259,33 +283,48 @@ router.post('/process', async (req, res) => {
 
       if (accumulated.length < 4) {
         if (accumulated.length === 0) {
-          callData.retries = (callData.retries || 0) + 1;
+          // No digits at all — don't increment failure counter, just patiently re-ask
+          // Only count as a retry if user has been told multiple times already
+          callData.noDigitCount = (callData.noDigitCount || 0) + 1;
+          console.log(`   ⚠️ No digits extracted (noDigitCount=${callData.noDigitCount})`);
+
+          if (callData.noDigitCount >= 3) {
+            // After 3 consecutive no-digit turns, try transferring
+            callData.retries = (callData.retries || 0) + 1;
+          }
+
           if (callData.retries >= 4) {
             twiml.say(
               { voice: "Google.hi-IN-Wavenet-D", language: "hi-IN" },
-              "Number samajh nahi aaya. Agent se connect kar rahe hain.",
+              "Machine ka number samajh nahi aaya. Ek agent se connect kar rahe hain.",
             );
             twiml.dial(process.env.HUMAN_AGENT_NUMBER || "+919876543210");
             activeCalls.delete(CallSid);
             return res.type("text/xml").send(twiml.toString());
           }
-          const noDigitHints = [
-            "Machine par likha number ek ek digit mein boliye.",
-            "Jaise — teen, paanch, do, saat. Aaram se boliye.",
-            "Bill ya kagaz mein dekh ke boliye, main sun raha hoon.",
+
+          // Give a very clear and patient prompt
+          const noDigitPrompts = [
+            "Kripya sirf machine ka number boliye. Plate par likha hota hai — jaise 3 3 0 5 4 4 7.",
+            "Number nahi suna. Ek ek digit clearly boliye — jaise: teen, teen, shunya, paanch, chaar, chaar, saat.",
+            "Machine par ek steel plate hoti hai. Woh number dekh ke sirf digits boliye.",
           ];
-          callData.lastQuestion = noDigitHints[Math.min(callData.retries - 1, 2)];
+          callData.lastQuestion = noDigitPrompts[Math.min(callData.noDigitCount - 1, 2)];
           askNumber(twiml, callData.lastQuestion);
           activeCalls.set(CallSid, callData);
           return res.type("text/xml").send(twiml.toString());
         }
 
+        // Got some digits but not enough yet
+        callData.noDigitCount = 0; // reset since we got some digits
         console.log(`   ⏳ Only ${accumulated.length} digit(s) — waiting for more`);
         callData.lastQuestion = `${accumulated.split("").join(" ")} aaya. Ab baaki digits boliye.`;
         askNumber(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
       }
+
+      callData.noDigitCount = 0; // reset when we have enough digits
 
       const candidates = buildCandidates(accumulated);
       console.log(`   🔍 Trying ${candidates.length} candidate(s) in parallel`);
@@ -310,9 +349,10 @@ router.post('/process', async (req, res) => {
         callData.customerData = validResult.data;
         callData.step = "ask_problem";
         callData.retries = 0;
+        callData.noDigitCount = 0;
 
         const formattedNo = matchedCandidate.split('').join(' ');
-        callData.lastQuestion = `Shukriya. Machine number ${formattedNo} mil gaya. ${validResult.data.customer_name ? validResult.data.customer_name + ' ' : ''}Aapki machine mein kya pareshani aa rahi hai?`;
+        callData.lastQuestion = `Shukriya. Machine number ${formattedNo} mil gaya. ${validResult.data.customer_name ? validResult.data.customer_name + ' — ' : ''}Machine mein kya pareshani aa rahi hai?`;
 
         ask(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
@@ -323,22 +363,18 @@ router.post('/process', async (req, res) => {
       if (callData.retries >= 4) {
         twiml.say(
           { voice: "Google.hi-IN-Wavenet-D", language: "hi-IN" },
-          "Machine ka record nahi mila. Agent se connect kar rahe hain.",
+          "Machine ka record nahi mila. Ek agent se connect kar rahe hain.",
         );
         twiml.dial(process.env.HUMAN_AGENT_NUMBER || "+919876543210");
         activeCalls.delete(CallSid);
         return res.type("text/xml").send(twiml.toString());
       }
 
+      // Clear buffer for fresh entry on next turn
       callData.partialMachineNo = "";
-      callData.machineNoFreshStart = true;
+      callData.machineNoFreshStart = false; // Already cleared, don't double-clear next turn
 
-      const retryMessages = [
-        `Record mein nahi mila. Dobara ek ek digit boliye.`,
-        `Abhi bhi match nahi hua, dhire clearly boliye.`,
-        `Ek baar aur boliye — main dhyan se sun raha hoon.`,
-      ];
-      callData.lastQuestion = retryMessages[Math.min(callData.retries - 1, 2)];
+      callData.lastQuestion = getSmartPrompt("ask_machine_no", callData.retries);
       askNumber(twiml, callData.lastQuestion);
       activeCalls.set(CallSid, callData);
       return res.type("text/xml").send(twiml.toString());
@@ -370,33 +406,43 @@ router.post('/process', async (req, res) => {
           gather.say({
             voice: "Google.hi-IN-Wavenet-D",
             language: "hi-IN"
-          }, "Kripya detail mein batayein ki machine mein kya problem hai.");
+          }, getSmartPrompt("ask_complaint", callData.attempts.problem));
           activeCalls.set(CallSid, callData);
           return res.type("text/xml").send(twiml.toString());
         }
       } else {
-        // VALIDATE PROBLEM
+        // VALIDATE PROBLEM — with attempt limits
         const isValid = await validateProblem(rawInput);
         if (!isValid) {
-          console.log(`[Call ${CallSid}] ⚠️ Invalid problem detected: "${rawInput}"`);
-          const gather = twiml.gather({
-            input: "speech",
-            language: "hi-IN",
-            action: "/voice/process",
-            method: "POST",
-            timeout: 10
-          });
-          gather.say({
-            voice: "Google.hi-IN-Wavenet-D",
-            language: "hi-IN"
-          }, "Maaf kijiyega, main samajh nahi paayi. Kripya machine ki samasya detail mein batayein.");
-          activeCalls.set(CallSid, callData);
-          return res.type("text/xml").send(twiml.toString());
-        }
+          callData.attempts.problem = (callData.attempts.problem || 0) + 1;
+          console.log(`[Call ${CallSid}] ⚠️ Invalid problem detected (attempt ${callData.attempts.problem}): "${rawInput}"`);
 
-        callData.problem = rawInput;
-        callData.step = "confirm_phone";
-        callData.attempts.problem = 0;
+          if (callData.attempts.problem >= 3) {
+            // After 3 failed attempts, accept whatever they said
+            console.log(`[Call ${CallSid}] 📢 Max problem attempts reached, accepting as-is`);
+            callData.problem = rawInput;
+            callData.step = "confirm_phone";
+            callData.attempts.problem = 0;
+          } else {
+            const gather = twiml.gather({
+              input: "speech",
+              language: "hi-IN",
+              action: "/voice/process",
+              method: "POST",
+              timeout: 10
+            });
+            gather.say({
+              voice: "Google.hi-IN-Wavenet-D",
+              language: "hi-IN"
+            }, "Maaf kijiyega. Kripya sirf machine ki samasya batayein, jaise engine chalu nahi ho raha, ya AC kharab hai.");
+            activeCalls.set(CallSid, callData);
+            return res.type("text/xml").send(twiml.toString());
+          }
+        } else {
+          callData.problem = rawInput;
+          callData.step = "confirm_phone";
+          callData.attempts.problem = 0;
+        }
       }
 
       const phone = String(callData.customerData?.customer_phone_no || callData.callingNumber || "");
@@ -517,40 +563,38 @@ router.post('/process', async (req, res) => {
 
     // ============ STEP 3.25: ENTER NEW PHONE (digit collection only) ============
     else if (callData.step === "enter_new_phone") {
-      const digits = rawInput.replace(/\D/g, "");
+      // CI handling for wait/repeat/confused in phone entry
+      const ci = handleConversationalIntent(rawInput, callData);
+      if (ci.handled) {
+        askNumber(twiml, ci.response);
+        activeCalls.set(CallSid, callData);
+        return res.type("text/xml").send(twiml.toString());
+      }
+
+      // Use extractOnlyDigits to handle Hindi/Hinglish spoken digits too
+      const digits = extractOnlyDigits(rawInput);
+      console.log(`   📱 Phone digits extracted: "${digits}"`);
       if (digits.length >= 10) {
         const newPhone = digits.slice(-10);
+        // Validate Indian mobile: must start with 6,7,8,9
+        if (!["6","7","8","9"].includes(newPhone[0])) {
+          askNumber(twiml, `Yeh number valid nahi — ${newPhone[0]} se start ho raha hai. 6, 7, 8 ya 9 se shuru hona chahiye. Dobara boliye.`);
+          activeCalls.set(CallSid, callData);
+          return res.type("text/xml").send(twiml.toString());
+        }
         callData.tempPhone = newPhone;
         callData.step = "verify_new_phone";
-        const formattedPhone = newPhone.split('').join(' ');
-        const gather = twiml.gather({
-          input: "speech",
-          language: "hi-IN",
-          action: "/voice/process",
-          method: "POST",
-          timeout: 8
-        });
-        gather.say({
-          voice: "Google.hi-IN-Wavenet-D",
-          language: "hi-IN"
-        }, `Theek hai. Aapka naya number ${formattedPhone} hai. Kya yeh sahi hai?`);
+        const formattedPhone = `${newPhone.slice(0,5)} ${newPhone.slice(5)}`;
+        callData.lastQuestion = `Naya number ${formattedPhone} hai. Sahi hai?`;
+        ask(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
       } else {
         // Not enough digits — re-prompt
-        const gather = twiml.gather({
-          input: "speech dtmf",
-          language: "hi-IN",
-          action: "/voice/process",
-          method: "POST",
-          timeout: 10,
-          numDigits: 10,
-          finishOnKey: "#",
-        });
-        gather.say({
-          voice: "Google.hi-IN-Wavenet-D",
-          language: "hi-IN"
-        }, "Maaf kijiye. Kripya poora das ankon ka number batayein.");
+        askNumber(twiml, digits.length > 0
+          ? `Sirf ${digits.length} digit sune. Pura 10 digit wala number ek ek karke boliye.`
+          : "Kripya naya 10 ankon ka number boliye. Jaise: 9 8 7 6 5 4 3 2 1 0."
+        );
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
       }
@@ -558,38 +602,28 @@ router.post('/process', async (req, res) => {
 
     // ============ STEP 3.5: VERIFY NEW PHONE ============
     else if (callData.step === "verify_new_phone") {
-      const intent = await detectIntent(rawInput, "verify new phone number");
+      // CI handling
+      const ci = handleConversationalIntent(rawInput, callData);
+      if (ci.handled) {
+        ask(twiml, ci.response);
+        activeCalls.set(CallSid, callData);
+        return res.type("text/xml").send(twiml.toString());
+      }
 
-      if (intent === "CONFIRM" || intent === "OTHER") { // Default to confirm if unclear but likely positive
+      const intent = await detectIntent(rawInput, "verify new phone number confirmation");
+
+      if (intent === "CONFIRM" || intent === "OTHER") {
         callData.finalPhone = callData.tempPhone;
         callData.step = "ask_city";
-        const gather = twiml.gather({
-          input: "speech",
-          language: "hi-IN",
-          action: "/voice/process",
-          method: "POST",
-          timeout: 8
-        });
-        gather.say({
-          voice: "Google.hi-IN-Wavenet-D",
-          language: "hi-IN"
-        }, "Theek hai, number save kar liya gaya hai. Ab batayein, aapka service branch ya city kaunsa hai?");
+        callData.lastQuestion = "Theek hai, number save ho gaya. Ab batayein, aapki machine abhi kaunse shehar mein hai?";
+        ask(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
       } else {
-        // User said NO or CHANGE again
-        const gather = twiml.gather({
-          input: "speech",
-          language: "hi-IN",
-          action: "/voice/process",
-          method: "POST",
-          timeout: 8
-        });
-        gather.say({
-          voice: "Google.hi-IN-Wavenet-D",
-          language: "hi-IN"
-        }, "Maaf kijiyega. Kripya apna das ankon ka naya mobile number dobara batayein.");
-        callData.step = "confirm_phone";
+        // User said NO — go back to enter new phone
+        callData.step = "enter_new_phone";
+        callData.lastQuestion = "Kripya apna sahi 10 ankon ka naya mobile number boliye.";
+        askNumber(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
       }
@@ -627,22 +661,31 @@ router.post('/process', async (req, res) => {
         if (matchedCenter) {
           console.log(`[Call ${CallSid}] 📍 Matched to Service Center: ${matchedCenter.city_name} (Branch: ${matchedCenter.branch_name})`);
           callData.matchedCenter = matchedCenter;
-          callData.finalCity = matchedCenter.city_name; // Use canonical name
+          callData.finalCity = matchedCenter.city_name;
         } else {
-          console.log(`[Call ${CallSid}] ⚠️ No city match found for: "${rawInput}"`);
-          const gather = twiml.gather({
-            input: "speech",
-            language: "hi-IN",
-            action: "/voice/process",
-            method: "POST",
-            timeout: 8
-          });
-          gather.say({
-            voice: "Google.hi-IN-Wavenet-D",
-            language: "hi-IN"
-          }, "Maaf kijiye, humein yeh shehar humari list mein nahi mila. Kripya apna nazdiki service branch ya bada shehar batayein.");
-          activeCalls.set(CallSid, callData);
-          return res.type("text/xml").send(twiml.toString());
+          callData.attempts.city = (callData.attempts.city || 0) + 1;
+          console.log(`[Call ${CallSid}] ⚠️ No city match found (attempt ${callData.attempts.city}) for: "${rawInput}"`);
+
+          if (callData.attempts.city >= 2) {
+            // After 2 fails, use customer's registered city or raw input
+            const fallbackCity = callData.customerData?.city || rawInput;
+            console.log(`[Call ${CallSid}] 📢 Max city attempts reached, using fallback: "${fallbackCity}"`);
+            callData.finalCity = fallbackCity;
+          } else {
+            const gather = twiml.gather({
+              input: "speech",
+              language: "hi-IN",
+              action: "/voice/process",
+              method: "POST",
+              timeout: 8
+            });
+            gather.say({
+              voice: "Google.hi-IN-Wavenet-D",
+              language: "hi-IN"
+            }, "Maaf kijiye, humein yeh shehar nahi mila. Kripya apna nazdiki bada shehar batayein, jaise Jaipur, Udaipur, Ajmer, ya Kota.");
+            activeCalls.set(CallSid, callData);
+            return res.type("text/xml").send(twiml.toString());
+          }
         }
       }
 
@@ -714,10 +757,10 @@ router.post('/process', async (req, res) => {
           service_date: new Date().toISOString().split('T')[0],
           from_time: "",
           to_time: "",
-          job_open_lat: "0.000000",
-          job_open_lng: "0.000000",
-          job_close_lat: "0.000000",
-          job_close_lng: "0.000000"
+          job_open_lat: 0,
+          job_open_lng: 0,
+          job_close_lat: 0,
+          job_close_lng: 0
         };
 
         console.log(`\n======================= FULL PAYLOAD SUBMISSION =======================`);
@@ -765,34 +808,87 @@ router.post('/process', async (req, res) => {
     else if (callData.step === "ask_what_to_change") {
       const input = rawInput.toLowerCase();
 
-      if (input.includes("number") || input.includes("machine")) {
+      // Detect what the user wants to change (Hindi + Hinglish + English)
+      const wantsMachineChange = [
+        "machine", "नंबर", "number", "chassis", "मशीन", "registration", "machine number",
+        "machine no", "no badalna", "number badalna", "machine ka number",
+      ].some(k => input.includes(k)) && ![
+        "phone", "mobile", "contact", "फोन", "मोबाइल",
+      ].some(k => input.includes(k)); // Exclude phone keywords
+
+      const wantsProblemChange = [
+        "pareshani", "problem", "shikayat", "complaint", "dikkat", "taklif",
+        "समस्या", "परेशानी", "शिकायत", "दिक्कत", "problem badalna",
+      ].some(k => input.includes(k));
+
+      const wantsPhoneChange = [
+        "phone", "mobile", "contact", "नंबर", "number", "फोन", "मोबाइल",
+        "phone number", "mobile number", "contact number", "purana number",
+        "phone badalna", "number change", "puraana", "purana", "naya number",
+        "phone wala", "number wala",
+      ].some(k => input.includes(k)) && !wantsMachineChange;
+
+      const wantsCityChange = [
+        "city", "branch", "shehar", "shahar", "location", "jagah",
+        "शहर", "सिटी", "ब्रांच", "जगह",
+      ].some(k => input.includes(k));
+
+      if (wantsMachineChange) {
         callData.step = "ask_machine_no";
         callData.partialMachineNo = "";
-        callData.machineNoFreshStart = true;
-        askNumber(twiml, "Theek hai. Apne machine ka number dobara batayein.");
-      } else if (input.includes("pareshani") || input.includes("problem") || input.includes("shikayat")) {
+        callData.machineNoFreshStart = false;
+        callData.retries = 0;
+        callData.lastQuestion = "Theek hai. Apni machine ka number dobara ek ek digit mein boliye.";
+        askNumber(twiml, callData.lastQuestion);
+      } else if (wantsProblemChange) {
         callData.step = "ask_problem";
-        ask(twiml, "Theek hai. Machine mein kya pareshani aa rahi hai, dobara batayein.");
-      } else if (input.includes("phone") || input.includes("mobile") || input.includes("number")) {
-        callData.step = "confirm_phone";
-        ask(twiml, "Kya hum aapki complaint isi mobile number par register karein?");
-      } else if (input.includes("city") || input.includes("branch") || input.includes("shehar")) {
+        callData.attempts.problem = 0;
+        callData.lastQuestion = "Theek hai. Machine mein kya pareshani aa rahi hai, dobara batayein.";
+        ask(twiml, callData.lastQuestion);
+      } else if (wantsPhoneChange) {
+        callData.step = "enter_new_phone";
+        callData.lastQuestion = "Theek hai. Apna naya 10 ankon ka mobile number boliye.";
+        askNumber(twiml, callData.lastQuestion);
+      } else if (wantsCityChange) {
         callData.step = "ask_city";
-        ask(twiml, "Theek hai. Aapka city ya service branch kaunsa hai?");
+        callData.attempts.city = 0;
+        callData.lastQuestion = "Theek hai. Aapki machine abhi kaunse shehar mein hai?";
+        ask(twiml, callData.lastQuestion);
       } else {
-        // Default to asking again if unclear
-        const gather = twiml.gather({
-          input: "speech",
-          language: "hi-IN",
-          action: "/voice/process",
-          method: "POST",
-          timeout: 8
-        });
-        gather.say({
-          voice: "Google.hi-IN-Wavenet-D",
-          language: "hi-IN"
-        }, "Maaf kijiye, main samajh nahi paayi. Aap kya badalna chahte hain? Machine number, pareshani, phone, ya city?");
-        return res.type("text/xml").send(twiml.toString());
+        // Use AI to detect intent for ambiguous cases
+        const aiIntent = await detectIntent(rawInput,
+          "User is responding to: 'Aap kya badalna chahte hain? Machine number, pareshani, phone number, ya city?' — detect which one."
+        );
+        console.log(`[Call ${CallSid}] ask_what_to_change AI fallback: "${aiIntent}"`);
+
+        // Map AI response to action
+        const lower = (aiIntent || "").toLowerCase();
+        if (lower.includes("machine") || lower.includes("number") || lower.includes("chassis")) {
+          callData.step = "ask_machine_no";
+          callData.partialMachineNo = "";
+          callData.machineNoFreshStart = false;
+          callData.retries = 0;
+          callData.lastQuestion = "Apni machine ka number dobara ek ek digit mein boliye.";
+          askNumber(twiml, callData.lastQuestion);
+        } else if (lower.includes("phone") || lower.includes("mobile") || lower.includes("contact")) {
+          callData.step = "enter_new_phone";
+          callData.lastQuestion = "Apna naya 10 digit mobile number boliye.";
+          askNumber(twiml, callData.lastQuestion);
+        } else if (lower.includes("problem") || lower.includes("complaint") || lower.includes("shikayat")) {
+          callData.step = "ask_problem";
+          callData.attempts.problem = 0;
+          callData.lastQuestion = "Machine mein kya pareshani hai, dobara batayein.";
+          ask(twiml, callData.lastQuestion);
+        } else if (lower.includes("city") || lower.includes("branch") || lower.includes("location")) {
+          callData.step = "ask_city";
+          callData.attempts.city = 0;
+          callData.lastQuestion = "Aapki machine kaunse shehar mein hai?";
+          ask(twiml, callData.lastQuestion);
+        } else {
+          // Still unclear — ask again
+          callData.lastQuestion = "Maaf kijiye, samajh nahi aaya. Kya badalna chahte hain? Phone number, machine number, pareshani, ya shehar?";
+          ask(twiml, callData.lastQuestion);
+        }
       }
 
       activeCalls.set(CallSid, callData);

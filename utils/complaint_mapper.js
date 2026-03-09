@@ -404,9 +404,20 @@ export async function validateProblem(text) {
   
   // Quick local check for common problem keywords (English + Hindi fast-path)
   const commonKeywords = [
-    "starting", "engine", "break", "breakdown", "oil", "leak", "noise", "working", "start", "kharaab", "pareshani", "problem", "issue",
-    "chalu", "shuru", "band", "kharab", "dikkat", "samasya", "kaakal", "kaam", "kam", 
-    "चालू", "बंद", "खराब", "दिक्कत", "समस्या", "काम", "स्टार्ट"
+    // English
+    "starting", "engine", "break", "breakdown", "oil", "leak", "noise", "working", "start", "problem", "issue",
+    "hydraulic", "brake", "gear", "transmission", "pump", "steering", "clutch", "fuel", "wiper", "tyre", "tire",
+    "bucket", "boom", "track", "exhaust", "horn", "light", "battery", "ac", "cooling", "service",
+    // Hinglish 
+    "kharaab", "kharab", "pareshani", "chalu", "shuru", "band", "dikkat", "samasya", "kaam", "kam",
+    "chal nahi", "nahi chal", "na chal", "nahi ho", "ho nahi", "nahi kar", "nahi aa", "nahi de",
+    "kaam nahi", "run nahi", "start nahi", "chalu nahi", "band ho", "kharab ho", "tut gaya", "toot",
+    "garam", "dhuan", "awaaz", "aawaz", "tel", "pani", "hawa", "pressure",
+    // Hindi
+    "चालू", "बंद", "खराब", "दिक्कत", "समस्या", "काम", "स्टार्ट", "इंजन", "मोटर",
+    "चल", "नहीं", "परेशानी", "प्रॉब्लम", "टूट", "गरम", "धुआ", "आवाज", "तेल", "लीक",
+    "ब्रेक", "गियर", "पंप", "पंखा", "बैटरी", "एसी", "ऐसी", "सर्विस", "हॉर्न", "लाइट",
+    "मरम्मत", "रिपेयर", "ठीक", "खराबी", "शिकायत",
   ];
   if (commonKeywords.some(k => text.toLowerCase().includes(k))) {
     console.log(`[Problem Validation] Fast-path Match: "${text}"`);

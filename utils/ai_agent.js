@@ -2,9 +2,9 @@ import axios from 'axios';
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const REQUEST_TIMEOUT = 10000; // Reduced to 10 seconds for faster failure/fallback
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 500; // ms
+const REQUEST_TIMEOUT = 5000;  // 5 seconds — fast fail, no hanging
+const MAX_RETRIES = 1;         // Only 1 retry max for speed
+const RETRY_DELAY = 300;       // ms
 
 /**
  * Make API call with exponential backoff retry logic
@@ -14,7 +14,7 @@ async function makeGroqAPICall(messages, options, attempt = 1) {
     const response = await axios.post(
       GROQ_API_URL,
       {
-        model: 'llama-3.1-8b-instant', 
+        model: 'llama-3.1-8b-instant',  // Fastest Groq model
         messages: messages,
         temperature: 0.1, // Lower for speed and accuracy
         max_tokens: options.max_tokens || 100, // Faster responses
@@ -144,34 +144,36 @@ EXAMPLES:
  */
 export async function detectIntent(userText, context) {
   const normalizedText = (userText || "").trim().toLowerCase();
-  
-  // ============ FAST-PATH KEYWORD LISTS (no AI needed) ============
 
-  // CHANGE / NO keywords — checked FIRST because negations are strongest signals
+  // CHANGE / NO keywords — checked FIRST
   const changeWords = [
-    // Hindi — negation words (highest priority)
+    // Hindi negations
     "नहीं", "नही", "ना", "बदलना", "बदलो", "बदल दो", "गलत", "नहीं चाहिए",
     // Hinglish / English
-    "nahi", "nahin", "nhi", "na", "no", "badalna", "badlo", "badal do", "galat", "change", "nahi chahiye", "galat hai",
+    "nahi", "nahin", "nhi", "na", "no", "badalna", "badlo", "badal do",
+    "galat", "change", "nahi chahiye", "galat hai",
+    // Phone change signals
+    "purana", "puraana", "purana wala", "badal", "naya wala",
   ];
 
-  // CONFIRM keywords — checked AFTER change to avoid false positives on mixed sentences
+  // CONFIRM keywords
   const confirmWords = [
-    // Hindi — pure affirmatives only
-    "हां", "हाँ", "हाँ", "हान", "हन", "जी", "जी हां", "जी हाँ", "सही", "ठीक है",
+    // Hindi
+    "हां", "हाँ", "हान", "हन", "जी", "जी हां", "जी हाँ", "सही", "ठीक है",
     "बिल्कुल", "अच्छा", "सबमिट", "दर्ज", "रजिस्टर", "कन्फर्म",
     // Hinglish / English
     "haan", "han", "yes", "sahi", "theek hai", "thik hai", "ok", "okay",
-    "bilkul", "zaroor", "submit", "register", "confirm", "done", "darz kar", "file kar",
+    "bilkul", "zaroor", "submit", "register", "confirm", "done",
+    "darz kar", "file kar", "kar do", "bilkul sahi",
   ];
 
   // REPEAT keywords
   const repeatWords = [
     "repeat", "dobara", "again", "bolye", "bol sakte", "kya bola",
-    "समझा नहीं", "फिर बोलो", "दोबारा", "सुनाओ",
+    "समझा नहीं", "फिर बोलो", "दोबारा", "सुनाओ", "phir se", "suna nahi",
   ];
 
-  // IMPORTANT: Check CHANGE first — negations override everything
+  // Check CHANGE first — negations override everything
   if (changeWords.some(w => normalizedText.includes(w.toLowerCase()))) {
     console.log(`[Intent Detection] Fast-path Match: CHANGE`);
     return "CHANGE";
@@ -185,35 +187,24 @@ export async function detectIntent(userText, context) {
     return "REPEAT";
   }
 
-  // 2. AI FALLBACK (For complex phrasing or "confusion")
+  // AI FALLBACK — only for truly ambiguous cases
   const systemPrompt = {
     role: "system",
-    content: `You are an expert at understanding user intent in Hindi/English voice calls.
+    content: `You are an intent classifier for a Hindi/English JCB voice call system.
+Context: ${context}
 
-CONTEXT: ${context}
-
-USER SAID: "${userText}"
-
-TASK: Determine the user's intent.
-
-RETURN ONLY ONE of these exact words:
-- CONFIRM: User says yes, agrees, or confirms
-- CHANGE: User says no, disagrees, or wants to change
-- REPEAT: User asks to repeat or didn't understand
-- OTHER: Anything else
-
-Examples:
-- "Haan sahi hai" → CONFIRM
-- "Nahi, badalna hai" → CHANGE
-- "Kya fir se bol sakte ho" → REPEAT
-- "Theek hai" → CONFIRM
-- "Galat hai" → CHANGE`
+Respond with EXACTLY ONE WORD only — no explanation, no punctuation:
+- CONFIRM  (user says yes, haan, sahi hai, theek hai, bilkul, ok, ji)
+- CHANGE   (user says no, nahi, galat, badalna, change, purana, wrong)
+- REPEAT   (user asks to repeat, didn't hear, dobara, phir se)
+- OTHER    (anything else)`,
   };
+
 
   try {
     const response = await askGroqAI(
       [systemPrompt, { role: "user", content: userText }],
-      { max_tokens: 10, temperature: 0.1 }
+      { max_tokens: 5, temperature: 0.1 }  // Fastest response
     );
 
     const intent = response.trim().split(/\s+/)[0].toUpperCase().replace(/[^A-Z]/g, '');
@@ -270,29 +261,43 @@ Be professional but friendly.`
  * Validate complaint description for quality
  */
 export async function validateComplaintText(complaintText) {
+  if (!complaintText || complaintText.trim().length < 2) return false;
+
+  // Fast-path: if >= 5 words, almost certainly a real complaint — skip AI
+  const wordCount = complaintText.trim().split(/\s+/).length;
+  if (wordCount >= 5) {
+    console.log(`[Problem Validation] Fast-path Match: "${complaintText}"`);
+    return true;
+  }
+
+  // Fast-path: reject pure filler words with no info
+  const fillers = ["haan", "ok", "okay", "ha", "acha", "theek", "yes", "no", "nahi", "hmm", "han"];
+  const lower = complaintText.trim().toLowerCase();
+  if (fillers.includes(lower)) return false;
+
   const systemPrompt = {
     role: "system",
-    content: `You are a complaint quality validator.
+    content: `You validate complaints for a JCB machinery call center. Users are rural operators and farmers who speak simply.
 
-Check if the complaint description is meaningful (not just "ok", "yes", etc).
+A complaint is VALID if it describes ANY machine problem — even vaguely or simply. Be VERY lenient.
+VALID examples: "Machine kharab hai", "engine start nahi", "kuch problem aaya", "machine sahi nahi chal rahi", "hydraulic slow hai", "gear nahi lag raha"
+INVALID ONLY: pure filler with zero info: "haan", "ok", "yes", "no", "hmm"
 
-RETURN ONLY:
-- VALID: if it's a real problem description
-- INVALID: if it's too vague or just a filler word`
+Respond ONLY: VALID or INVALID`,
   };
 
   try {
     const response = await askGroqAI(
       [systemPrompt, { role: "user", content: complaintText }],
-      { max_tokens: 10, temperature: 0.1 }
+      { max_tokens: 5, temperature: 0.1 }
     );
-
     return response.toUpperCase().includes("VALID");
   } catch (err) {
     console.error('[Complaint Validation] Error:', err.message);
-    return true; // Default to valid if error
+    return true; // Default to valid if error — never block user
   }
 }
+
 
 
 /* ======================= DIGIT WORD MAP (Hindi + English + Hinglish) ======================= */
@@ -349,11 +354,18 @@ export function extractOnlyDigits(text) {
   const processed = text.toLowerCase().replace(/[।,!?;|]/g, " ");
 
   const verbNoise = processed
+    // Verb + object noise (e.g., "kar do", "bata do")
     .replace(
       /\b(kar|karo|karke|karein|bata|bolo|dedo|de|save|sev|chalao|chalana|chalte|ruk|ruko|sun|suno|lelo|le)\s+(do|दो|lo|लो|dena|लेना|देना)\b/gi,
       " ",
     )
-    .replace(/\b(do|दो)\s+(baar|bar|minute|min|second|sec)\b/gi, " ");
+    // Word-based time expressions: "do baar", "do minute"
+    .replace(/\b(do|दो)\s+(baar|bar|minute|min|second|sec)\b/gi, " ")
+    // IMPORTANT: Digit-based time expressions — "1 minute", "2 min", "5 मिनट", "10 second"
+    // These appear when user says "1 मिनट रुको" — "1" should NOT become part of machine number
+    .replace(/\b(\d+)\s*(minute|minutes|min|second|seconds|sec|मिनट|सेकंड|घंटा|ghanta|hour|hours)\b/gi, " ")
+    // Also strip ordinal/count references likely not machine digits: e.g. "1st", "2nd"
+    .replace(/\b\d+(st|nd|rd|th)\b/gi, " ");
 
   const tokens = verbNoise.split(/[\s\-\/]+/).filter((t) => t.length > 0);
   let result = "";
@@ -368,6 +380,7 @@ export function extractOnlyDigits(text) {
   }
   return result;
 }
+
 
 /**
  * Basic validation for chassis format
