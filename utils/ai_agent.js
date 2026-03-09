@@ -145,19 +145,42 @@ EXAMPLES:
 export async function detectIntent(userText, context) {
   const normalizedText = (userText || "").trim().toLowerCase();
   
-  // 1. REGEX FAST-PATH (Instant detection for unambiguous words)
-  // YES / CONFIRM patterns
-  if (/^(haan|han|ha|yes|sahi|thik|theek|ok|okay|confirm|ji|ji haan|ji han)$/.test(normalizedText)) {
-    console.log(`[Intent Detection] Fast-path Match: CONFIRM`);
-    return "CONFIRM";
-  }
-  // NO / CHANGE patterns
-  if (/^(nahi|nahin|na|no|badalna|galat|change|nhi|ni)$/.test(normalizedText)) {
+  // ============ FAST-PATH KEYWORD LISTS (no AI needed) ============
+
+  // CHANGE / NO keywords — checked FIRST because negations are strongest signals
+  const changeWords = [
+    // Hindi — negation words (highest priority)
+    "नहीं", "नही", "ना", "बदलना", "बदलो", "बदल दो", "गलत", "नहीं चाहिए",
+    // Hinglish / English
+    "nahi", "nahin", "nhi", "na", "no", "badalna", "badlo", "badal do", "galat", "change", "nahi chahiye", "galat hai",
+  ];
+
+  // CONFIRM keywords — checked AFTER change to avoid false positives on mixed sentences
+  const confirmWords = [
+    // Hindi — pure affirmatives only
+    "हां", "हाँ", "हाँ", "हान", "हन", "जी", "जी हां", "जी हाँ", "सही", "ठीक है",
+    "बिल्कुल", "अच्छा", "सबमिट", "दर्ज", "रजिस्टर", "कन्फर्म",
+    // Hinglish / English
+    "haan", "han", "yes", "sahi", "theek hai", "thik hai", "ok", "okay",
+    "bilkul", "zaroor", "submit", "register", "confirm", "done", "darz kar", "file kar",
+  ];
+
+  // REPEAT keywords
+  const repeatWords = [
+    "repeat", "dobara", "again", "bolye", "bol sakte", "kya bola",
+    "समझा नहीं", "फिर बोलो", "दोबारा", "सुनाओ",
+  ];
+
+  // IMPORTANT: Check CHANGE first — negations override everything
+  if (changeWords.some(w => normalizedText.includes(w.toLowerCase()))) {
     console.log(`[Intent Detection] Fast-path Match: CHANGE`);
     return "CHANGE";
   }
-  // REPEAT patterns
-  if (/^(repeat|fir|phir|dobara|again|kya|bolye)$/.test(normalizedText)) {
+  if (confirmWords.some(w => normalizedText.includes(w.toLowerCase()))) {
+    console.log(`[Intent Detection] Fast-path Match: CONFIRM`);
+    return "CONFIRM";
+  }
+  if (repeatWords.some(w => normalizedText.includes(w.toLowerCase()))) {
     console.log(`[Intent Detection] Fast-path Match: REPEAT`);
     return "REPEAT";
   }
@@ -441,6 +464,12 @@ export async function findBestServiceCenterMatch(userInput) {
  */
 export async function translateToEnglish(text) {
   if (!text || text.length < 2) return text;
+  
+  // Skip translation if already English (ASCII only, no Devanagari)
+  if (/^[\x00-\x7F]+$/.test(text)) {
+    console.log(`[Translation] Already English, skipping: "${text}"`);
+    return text;
+  }
   
   console.log(`[Translation] Translating: "${text}"`);
   try {
