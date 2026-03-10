@@ -3237,24 +3237,16 @@ router.post("/", async (req, res) => {
     callSid: CallSid,
     from: From,
     callingNumber: callingNumber, // Store caller's phone number (last 10 digits)
-    step: "ivr_menu",
+    step: "ask_machine_no",
     retries: 0,
     partialMachineNo: "", // accumulates digit groups for machine number
     partialPhoneNo: "", // accumulates digit groups for phone
     customerData: null,
+    lastQuestion: "Namaskar! Rajesh Motors mein aapka swagat hai. Mujhe apni machine ka number btaiye ek ek puraa number.",
   });
 
-  const gather = twiml.gather({
-    input: "dtmf",
-    numDigits: 1,
-    timeout: 6,
-    action: "/voice/process",
-    method: "POST",
-  });
-  gather.say(
-    { voice: "Google.hi-IN-Wavenet-D", language: "hi-IN" },
-    "Namaskar! Rajesh Motors mein aapka swagat hai. Complaint darz karne ke liye ek dabayein, agent se baat ke liye do dabayein.",
-  );
+  const callData = activeCalls.get(CallSid);
+  askNumber(twiml, callData.lastQuestion);
 
   res.type("text/xml").send(twiml.toString());
 });
@@ -3269,10 +3261,11 @@ router.post("/process", async (req, res) => {
     if (!callData) {
       callData = {
         callSid: CallSid,
-        step: "ivr_menu",
+        step: "ask_machine_no",
         retries: 0,
         partialMachineNo: "",
         partialPhoneNo: "",
+        lastQuestion: "Mujhe apni machine ka number btaiye ek ek puraa number.",
       };
       activeCalls.set(CallSid, callData);
     }
@@ -3295,45 +3288,6 @@ router.post("/process", async (req, res) => {
     console.log(`🎤 Speech: "${SpeechResult}"`);
     console.log(`🧹 Cleaned: "${rawSpeech}"`);
     console.log(`${"═".repeat(70)}`);
-
-    /* ──────────────────────────────────────────────────────
-       STEP 0: IVR MENU
-    ────────────────────────────────────────────────────── */
-    if (callData.step === "ivr_menu") {
-      if (!Digits) {
-        ask(
-          twiml,
-          "Bhai sahab, complaint ke liye ek dabayein, aur seedha baat karne ke liye do dabayein.",
-        );
-        activeCalls.set(CallSid, callData);
-        return res.type("text/xml").send(twiml.toString());
-      }
-      if (Digits === "2") {
-        twiml.say(
-          { voice: "Google.hi-IN-Wavenet-D", language: "hi-IN" },
-          "Ji bilkul. Hum aapko abhi humare sahayak se jod rahe hain. Thodi der ruke, aapka kaam zaroor hoga.",
-        );
-        twiml.dial(process.env.HUMAN_AGENT_NUMBER || "+919876543210");
-        activeCalls.delete(CallSid);
-        return res.type("text/xml").send(twiml.toString());
-      }
-      if (Digits === "1") {
-        callData.step = "ask_machine_no";
-        callData.retries = 0;
-        callData.partialMachineNo = "";
-        callData.lastQuestion =
-          "mujhe apni machine ka number btaiye ek ek puraa number.";
-        askNumber(twiml, callData.lastQuestion);
-        activeCalls.set(CallSid, callData);
-        return res.type("text/xml").send(twiml.toString());
-      }
-      ask(
-        twiml,
-        "Maafi chahta hoon, yeh number nahi mila. Complaint ke liye ek dabayein, baat ke liye do dabayein.",
-      );
-      activeCalls.set(CallSid, callData);
-      return res.type("text/xml").send(twiml.toString());
-    }
 
     /* ──────────────────────────────────────────────────────
        STEP 1: ASK MACHINE NUMBER
