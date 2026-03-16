@@ -4030,8 +4030,8 @@ router.post("/process", async (req, res) => {
       );
 
       // VALIDATION: If new digits detected, ask for explicit confirmation first
-      if (phoneDigits.length >= 9) {
-        const potentialPhone = phoneDigits.length === 10 ? phoneDigits : phoneDigits.slice(-10);
+      if (phoneDigits.length >= 10) {
+        const potentialPhone = phoneDigits.slice(-10);
         const firstDigit = potentialPhone.charAt(0);
 
         // Check if valid Indian mobile (starts with 6,7,8,9)
@@ -4098,7 +4098,7 @@ router.post("/process", async (req, res) => {
       }
 
       // Digits accumulating but not complete yet
-      if (accumulated.length > 0 && accumulated.length < 9) {
+      if (accumulated.length > 0 && accumulated.length < 10) {
         const readable = accumulated.split("").join(" ");
         callData.retries = (callData.retries || 0) + 1;
         if (callData.retries >= 5) {
