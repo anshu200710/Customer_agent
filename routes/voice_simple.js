@@ -3300,7 +3300,7 @@ router.post("/process", async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (callData.step === "ask_machine_no") {
       // ── Conversational Intelligence Handler ──
-      const ci = handleConversationalIntent(rawSpeech, callData);
+      const ci = await handleConversationalIntent(rawSpeech, callData);
       if (ci.handled) {
         if (ci.intent !== INTENT.WAIT && ci.intent !== INTENT.CHECKING) {
           callData.retries = (callData.retries || 0) + 1;
@@ -3471,7 +3471,7 @@ router.post("/process", async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (callData.step === "confirm_customer") {
       // ── Conversational Intelligence Handler ──
-      const ci = handleConversationalIntent(rawSpeech, callData);
+      const ci = await handleConversationalIntent(rawSpeech, callData);
       if (ci.handled) {
         if (ci.intent !== INTENT.WAIT && ci.intent !== INTENT.CHECKING) {
           callData.retries = (callData.retries || 0) + 1;
@@ -3580,7 +3580,7 @@ router.post("/process", async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (callData.step === "ask_city") {
       // ── Conversational Intelligence Handler ──
-      const ci = handleConversationalIntent(rawSpeech, callData);
+      const ci = await handleConversationalIntent(rawSpeech, callData);
       if (ci.handled) {
         if (ci.intent !== INTENT.WAIT && ci.intent !== INTENT.CHECKING) {
           callData.retries = (callData.retries || 0) + 1;
@@ -3697,7 +3697,7 @@ router.post("/process", async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (callData.step === "ask_engineer_location") {
       // ── Conversational Intelligence Handler ──
-      const ci = handleConversationalIntent(rawSpeech, callData);
+      const ci = await handleConversationalIntent(rawSpeech, callData);
       if (ci.handled) {
         if (ci.intent !== INTENT.WAIT && ci.intent !== INTENT.CHECKING) {
           callData.retries = (callData.retries || 0) + 1;
@@ -3819,7 +3819,7 @@ router.post("/process", async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (callData.step === "ask_phone") {
       // ── Conversational Intelligence Handler ──
-      const ci = handleConversationalIntent(rawSpeech, callData);
+      const ci = await handleConversationalIntent(rawSpeech, callData);
       if (ci.handled) {
         if (ci.intent !== INTENT.WAIT && ci.intent !== INTENT.CHECKING) {
           callData.retries = (callData.retries || 0) + 1;
@@ -4123,7 +4123,7 @@ router.post("/process", async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (callData.step === "validate_phone") {
       // ── Conversational Intelligence Handler ──
-      const ci = handleConversationalIntent(rawSpeech, callData);
+      const ci = await handleConversationalIntent(rawSpeech, callData);
       if (ci.handled) {
         if (ci.intent !== INTENT.WAIT && ci.intent !== INTENT.CHECKING) {
           callData.retries = (callData.retries || 0) + 1;
@@ -4186,7 +4186,7 @@ router.post("/process", async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (callData.step === "confirm_phone") {
       // ── Conversational Intelligence Handler ──
-      const ci = handleConversationalIntent(rawSpeech, callData);
+      const ci = await handleConversationalIntent(rawSpeech, callData);
       if (ci.handled) {
         if (ci.intent !== INTENT.WAIT && ci.intent !== INTENT.CHECKING) {
           callData.retries = (callData.retries || 0) + 1;
@@ -4245,7 +4245,7 @@ router.post("/process", async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (callData.step === "ask_complaint") {
       // ── Conversational Intelligence Handler ──
-      const ci = handleConversationalIntent(rawSpeech, callData);
+      const ci = await handleConversationalIntent(rawSpeech, callData);
       if (ci.handled && !ci.isComplaintDone) {
         if (ci.intent !== INTENT.WAIT && ci.intent !== INTENT.CHECKING) {
           callData.retries = (callData.retries || 0) + 1;
@@ -4350,7 +4350,7 @@ router.post("/process", async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (callData.step === "ask_more_complaints") {
       // ── Conversational Intelligence Handler ──
-      const ci = handleConversationalIntent(rawSpeech, callData);
+      const ci = await handleConversationalIntent(rawSpeech, callData);
       if (ci.handled) {
         if (ci.intent !== INTENT.WAIT && ci.intent !== INTENT.CHECKING) {
           callData.retries = (callData.retries || 0) + 1;
@@ -4470,7 +4470,7 @@ router.post("/process", async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (callData.step === "clarify_complaint") {
       // ── Conversational Intelligence Handler ──
-      const ci = handleConversationalIntent(rawSpeech, callData);
+      const ci = await handleConversationalIntent(rawSpeech, callData);
       if (ci.handled) {
         if (ci.intent !== INTENT.WAIT && ci.intent !== INTENT.CHECKING) {
           callData.retries = (callData.retries || 0) + 1;
@@ -4680,7 +4680,7 @@ router.post("/process", async (req, res) => {
     ────────────────────────────────────────────────────── */
     if (callData.step === "explain_complaint") {
       // ── Conversational Intelligence Handler ──
-      const ci = handleConversationalIntent(rawSpeech, callData);
+      const ci = await handleConversationalIntent(rawSpeech, callData);
       if (ci.handled) {
         if (ci.intent !== INTENT.WAIT && ci.intent !== INTENT.CHECKING) {
           callData.retries = (callData.retries || 0) + 1;

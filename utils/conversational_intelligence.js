@@ -1,3 +1,5 @@
+import { getConversationResponse } from './ai_agent.js';
+
 /**
  * conversational_intelligence.js
  * ================================
@@ -52,7 +54,7 @@ const REPEAT_PATTERNS = [
   'kya tha number', 'number kya tha', 'address kya tha',
   'mujhe nahi suna', 'yeh kya tha',
   'line kharab hai', 'connection kharab', 'aawaz nahin aa rahi',
-  'ek baar aur kaha de', 'phir se kah de',
+  'ek baar aur kaha de', 'phir se kah de', 'fir bol', 'awaaz saaf nahi', 'dhree boliye',
   // English / Hinglish
   'repeat', 'say again', 'come again', 'excuse me',
   'pardon', 'what', 'huh', 'what did you say',
@@ -60,6 +62,7 @@ const REPEAT_PATTERNS = [
   'please repeat', 'can you repeat', 'please say again',
   'speak slowly', 'slow down', 'too fast',
   'what was that', 'what number', 'what address',
+  'can you speak again', 'not audible', 'volume low',
   // Hindi (Devanagari script)
   'दोबारा', 'दोबारा बोलो', 'दोबारा बोलिए', 'फिर से बोलो', 'फिर से बोलिए',
   'एक बार और', 'एक बार और बोलिए', 'फिर बोलो',
@@ -69,6 +72,7 @@ const REPEAT_PATTERNS = [
   'दूर लगा', 'नेटवर्क खराब', 'कॉल कट', 'कॉल बंद',
   'धीरे बोलिए', 'धीरे बोलो', 'साफ बोलिए', 'साफ़ बोल',
   'क्या संख्या', 'पता नहीं क्या कहा', 'दोबारा बोल', 'एक बार और बोल',
+  'सुनाई नहीं दिया', 'आवाज साफ नहीं है', 'फिर से कहिए',
 ];
 
 /* =====================================================================
@@ -136,6 +140,8 @@ const CONFUSED_PATTERNS = [
   'samajh nahi aaya', 'samajh nahi ayi',
   'thoda explain karo', 'thoda explain karein',
   'kya bolun main', 'kya likhna hai', 'kya puchh raha',
+  'kya chal raha hai', 'kya hai ye', 'kya bolu main', 'sun rahe ho', 'kya bolte ho',
+  'kya kya', 'kya bat', 'kya baat', 'kya hai', 'kya बोलती',
   'kya hua', 'kya baat hai', 'kya problem hai',
   'guide karo', 'bata do', 'batao',
   'pehle se kuch nahi pata', 'naya customer hu',
@@ -171,7 +177,11 @@ const CONFUSED_PATTERNS = [
   'गाइड करो', 'समझा दो', 'साफ़ करके बोलो',
   'शायद', 'हो सकता है', 'संभव है',
   'मेरी बात सुन', 'बात नहीं सुनते', 'सुनते हो क्या', 'सुन रहे हो',
-  'कौन बोल रहा', 'आप कौन', 'कौन है ये', 'किससे बात',
+  'kaun बोल रहा', 'आप कौन', 'कौन है ये', 'किससे बात',
+  'aap kaun ho', 'aap kahan se ho', 'company ka naam kya hai',
+  'kya chal raha hai', 'kya hai ye', 'kya bolu main', 'sun rahe ho', 'kya bolte ho',
+  'kya kya', 'kya bat', 'kya baat', 'kya hai', 'kya bolte',
+  'kya hua', 'kya baat hai', 'kya problem hai',
 ];
 
 /* =====================================================================
@@ -310,6 +320,13 @@ export function detectConversationalIntent(rawSpeech) {
     }
     console.log(`[CI] COMPLAINT_DONE`);
     return INTENT.COMPLAINT_DONE;
+  }
+
+  // LAST RESORT: If sentence is long (> 6 words) and contains question words, trigger CONFUSED
+  const questionWords = ['kya', 'kyun', 'kab', 'kahan', 'kaise', 'kaun', 'kyu', 'kaha', 'क्या', 'क्यों', 'कब', 'कहाँ', 'कैसे', 'कौन'];
+  if (wordCount >= 6 && questionWords.some(w => t.includes(w))) {
+    console.log(`[CI] DETECTED POTENTIAL QUESTION (long utterance)`);
+    return INTENT.CONFUSED;
   }
 
   return INTENT.NORMAL;
@@ -519,7 +536,7 @@ export function getSmartPrompt(step, retryCount = 0, extraData = {}) {
    Call this at the TOP of each step before any other logic.
    Returns: { handled: true, response: string } | { handled: false }
    ===================================================================== */
-export function handleConversationalIntent(rawSpeech, callData) {
+export async function handleConversationalIntent(rawSpeech, callData) {
   const intent = detectConversationalIntent(rawSpeech);
 
   switch (intent) {
@@ -541,6 +558,16 @@ export function handleConversationalIntent(rawSpeech, callData) {
       };
 
     case INTENT.CONFUSED:
+      // If the user said more than just "kya", use AI to answer their specific question
+      if (rawSpeech.split(/\s+/).length > 2) {
+        console.log(`[CI] Using AI for detailed confusion/question: "${rawSpeech}"`);
+        const aiResponse = await getConversationResponse(rawSpeech, `User is at step: ${callData.step}. Last question asked: ${callData.lastQuestion}`);
+        return {
+          handled: true,
+          intent,
+          response: aiResponse + " " + (callData.lastQuestion || ""),
+        };
+      }
       return {
         handled: true,
         intent,
