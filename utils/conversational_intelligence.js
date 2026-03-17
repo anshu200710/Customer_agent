@@ -24,6 +24,7 @@ export const INTENT = {
   GREETING: 'GREETING',     // "haan", "hello", "ji" as first word
   HELP: 'HELP',         // "help", "kya karna hai", "guide karo"
   COMPLAINT_DONE: 'COMPLAINT_DONE', // "bas itna hi", "aur kuch nahi", "yahi problem hai"
+  IDENTITY: 'IDENTITY',   // "tum kon ho", "kya karti ho", "tumhara naam kya hai", "kyu batau"
   NORMAL: 'NORMAL',       // no special handling needed
 };
 
@@ -54,7 +55,7 @@ const REPEAT_PATTERNS = [
   'kya tha number', 'number kya tha', 'address kya tha',
   'mujhe nahi suna', 'yeh kya tha',
   'line kharab hai', 'connection kharab', 'aawaz nahin aa rahi',
-  'ek baar aur kaha de', 'phir se kah de', 'fir bol', 'awaaz saaf nahi', 'dhree boliye',
+  'ek baar aur kaha de', 'phir se kah de', 'fir bol', 'awaaz saaf nahi', 'dhree boliye', 'fir se btao', 'fir se batao', 'phir se batao',
   // English / Hinglish
   'repeat', 'say again', 'come again', 'excuse me',
   'pardon', 'what', 'huh', 'what did you say',
@@ -279,6 +280,27 @@ const HELP_PATTERNS = [
 ];
 
 /* =====================================================================
+   IDENTITY / PURPOSE KEYWORDS — "Who are you?", "Why should I tell you?"
+   ===================================================================== */
+const IDENTITY_PATTERNS = [
+  // Hindi / Hinglish
+  'tum kon ho', 'aap kaun ho', 'tum kaun', 'aap kaun', 'kaun bol raha hai', 'kaun bol rahe ho',
+  'tumhara naam kya hai', 'aapka naam', 'naam kya hai tumhara', 'tera naam', 'tumhara naame', 'tumhara name',
+  'kya karti ho', 'kya karte ho', 'tumhara kaam kya hai', 'aapka kaam kya hai',
+  'tumhe kya chahiye', 'kis liye phone kiya', 'phone kyu kiya', 'call kyu kiya', 'kya chaiye',
+  'kyu btao', 'kyu batao', 'kyu batau', 'main kyu batau', 'tujhe kyu batau', 'kya karoge', 'kis liye chahiye',
+  'kaha se bol rahe ho', 'kahan se call kar rahe ho', 'who are you', 'what is your name',
+  'why are you calling',
+  // Devanagari
+  'तुम कौन हो', 'आप कौन हो', 'कौन बोल रहा है',
+  'तुम्हारा नाम क्या है', 'आपका नाम', 'तेरा नाम',
+  'क्या करती हो', 'क्या करते हो', 'तुम्हारा काम क्या है',
+  'तुम्हें क्या चाहिए', 'फ़ोन क्यों किया',
+  'क्यों बताऊँ', 'मैं क्यों बताऊँ', 'क्या करोगे', 'किस लिए',
+  'कहाँ से बोल रहे हो',
+];
+
+/* =====================================================================
    CORE INTENT DETECTOR
    Call this FIRST in every step handler
    ===================================================================== */
@@ -299,6 +321,7 @@ export function detectConversationalIntent(rawSpeech) {
   }
 
   if (REPEAT_PATTERNS.some(p => t.includes(p))) { console.log(`[CI] REPEAT`); return INTENT.REPEAT; }
+  if (IDENTITY_PATTERNS.some(p => t.includes(p))) { console.log(`[CI] IDENTITY`); return INTENT.IDENTITY; }
   if (CONFUSED_PATTERNS.some(p => t.includes(p))) { console.log(`[CI] CONFUSED`); return INTENT.CONFUSED; }
   if (HELP_PATTERNS.some(p => t.includes(p))) { console.log(`[CI] HELP`); return INTENT.HELP; }
 
@@ -398,8 +421,8 @@ export function getConfusedResponse(callData) {
       "Jaise: 'Jaipur workshop', ya 'Tonk road gaon', ya 'site par'.",
     ],
     ask_phone: [
-      "Aapka 10 digit mobile number chahiye. " +
-      "Ek ek digit boliye. Jaise: 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.",
+      "Aapka 10 anko ka mobile number chahiye. " +
+      "Kripya apna pura phone number boliye. Jaise: 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.",
     ],
     ask_complaint: [
       "Machine mein kya kharaabi hai woh batayein. " +
@@ -447,6 +470,25 @@ export function getHelpResponse(callData) {
     "Warna " + (callData.lastQuestion || "apna jawab boliye.");
 }
 
+/**
+ * getIdentityResponse
+ * Customer asks who the agent is or why they are calling
+ */
+export function getIdentityResponse(callData) {
+  const step = callData.step || '';
+  const identityIntro = "Main Rajesh Motors se JCB ki sahayak AI agent Priya bol rahi hoon. ";
+  
+  if (step === 'ask_machine_no') {
+    return identityIntro + "Aapki complaint register karne ke liye mujhe aapki machine ka number chahiye. Kripya apna machine number batayein.";
+  } else if (step === 'ask_complaint') {
+    return identityIntro + "Main aapki machine ki taklif system mein darj kar rahi hoon. " + (callData.lastQuestion || "");
+  } else if (step === 'ask_phone') {
+    return identityIntro + "Aapki complaint sahi number par register karne ke liye aapka mobile number chahiye. " + (callData.lastQuestion || "");
+  } else {
+    return identityIntro + "Aapki service book karne mein madad kar rahi hoon. " + (callData.lastQuestion || "Kripya apna jawab bolein.");
+  }
+}
+
 /* =====================================================================
    STEP-SMART PROMPTS — Varied, natural re-ask messages per step
    Avoids robotic repetition of the exact same sentence
@@ -454,11 +496,11 @@ export function getHelpResponse(callData) {
 export const SMART_PROMPTS = {
 
   ask_machine_no: [
-    "Theek hai. Apna machine number boliye — ek ek digit clearly. Jaise: 3 3 0 5 4 4 7.",
-    "Machine par likha number boliye. Plate mein hota hai — 4 se 8 digit ka.",
-    "Ek ek digit boliye — dhire dhire. Jaise: teen, teen, shunya, paanch, chaar, chaar, saat.",
-    "JCB ka registration number chahiye. Machine ke side mein plate पर hota hai.",
-    "Sirf digits boliye — aur kuch mat boliye. Number ka pehla digit se shuru karein.",
+    "Kripya apna machine number boliye, ek-ek number saaf aawaz mein. Jaise: 3 3 0 5 4 4 7.",
+    "Kripya machine par likha number boliye. Yeh 4 se 8 anko ka number hota hai.",
+    "Aap ek-ek ankh dhire dhire boliye. Jaise: teen, teen, shunya, paanch, chaar, chaar, saat.",
+    "Apni JCB machine ka number batayein. Yeh machine ke side mein plate par likha hota hai.",
+    "Kripya sirf machine ka number boliye, ek-ek ankh shuru se boliye.",
   ],
 
   confirm_customer: (name, city) => [
@@ -468,11 +510,11 @@ export const SMART_PROMPTS = {
   ],
 
   ask_city: [
-    "Abhi machine kahan hai — kaunsa shahar? Bas city naam boliye.",
-    "Machine kaunse city mein khadi hai? Jaise: Jaipur, Kota, Udaipur.",
-    "Kaunsa shehar? Ajmer, Alwar, Bhilwara, Sikar, Kota, Jaipur, Udaipur mein se koi?",
-    "City batayein — jahan machine hai abhi.",
-    "Machine ka location — kaunsa town ya city?",
+    "Aapna nearest service station bataiye — kaunsa branch lagega?",
+    "Aapka nikatam service station kahan hai? Jaise: Jaipur, Kota, Udaipur.",
+    "Kaunsa service branch? Ajmer, Alwar, Bhilwara, Sikar, Kota, Jaipur, Udaipur mein se koi?",
+    "Nearest service station brand batayein.",
+    "Aapna nazdeeki service branch batayein.",
   ],
 
   ask_engineer_location: [
@@ -484,11 +526,11 @@ export const SMART_PROMPTS = {
   ],
 
   ask_phone: [
-    "Phone number boliye — sirf 10 digits, ek ek karke.",
-    "Apna mobile number chahiye. Pehle digit se shuru karein.",
-    "Contact number ek ek digit boliye — 10 digits total.",
-    "Mobile number boliye clearly. Jaise: 9, 8, 7, 6 — ek ek digit.",
-    "10 digit ka number chahiye — dhire dhire boliye.",
+    "Kripya apna 10 anko ka mobile number boliye.",
+    "Apna mobile number chahiye. Pura 10 digit ka number boliye.",
+    "Kripya apna sampark number boliye — jisme 10 ankh ho.",
+    "Mobile number boliye. Jaise: 9, 8, 7, 6 — aise pura number dhire dhire boliye.",
+    "Aapka 10 digit ka phone number boliye, jisse aapse sampark kiya ja sake.",
   ],
 
   ask_complaint: [
@@ -581,6 +623,13 @@ export async function handleConversationalIntent(rawSpeech, callData) {
         response: getHelpResponse(callData),
       };
 
+    case INTENT.IDENTITY:
+      return {
+        handled: true,
+        intent,
+        response: getIdentityResponse(callData),
+      };
+
     case INTENT.COMPLAINT_DONE:
       // Only relevant in ask_complaint step — signal caller to proceed
       if (callData.step === 'ask_complaint') {
@@ -608,21 +657,21 @@ export function handleSilenceOrEmpty(callData) {
   // Step-specific silence hints
   const silenceHints = {
     ask_machine_no: [
-      "Kuch suna nahi. Machine number boliye — plate par likha hota hai.",
-      "Awaz nahi aayi. Number ek ek digit mein boliye.",
-      "Kya aap machine ke paas hain? Number dekhke boliye.",
+      "Mujhe aapki aawaz nahi aayi. Kripya apna machine number plate par dekh kar boliye.",
+      "Main sun nahi payi. Kripya ek ek number saaf aawaz mein boliye.",
+      "Kya aap machine ke paas hain? Kripya number dekh kar dhire se boliye.",
     ],
     ask_city: [
-      "City ka naam nahi suna. Kaunsa shehar hai?",
-      "Kahan hai machine — Jaipur, Kota, ya koi aur city?",
+      "Nearest service station ka naam nahi suna. Kaunsa branch hai?",
+      "Kahan ka service center hai — Jaipur, Kota, ya koi aur branch?",
     ],
     ask_engineer_location: [
       "Kuch nahi suna. Workshop ya jagah ka naam boliye.",
       "Engineer kahan aaye? Address ya area batayein.",
     ],
     ask_phone: [
-      "Phone number nahi suna. 10 digit number ek ek karke boliye.",
-      "Mobile number chahiye — clearly boliye.",
+      "Phone number samajh nahi aaya. Kripya apna pura 10 anko ka mobile number boliye.",
+      "Awaaz saaf nahi aayi. Kripya apna 10 digit ka mobile number boliye.",
     ],
     ask_complaint: [
       "Problem nahi suni. Machine mein kya kharaabi hai?",
@@ -650,6 +699,7 @@ export default {
   getCheckingResponse,
   getConfusedResponse,
   getHelpResponse,
+  getIdentityResponse,
   getSmartPrompt,
   SMART_PROMPTS,
 };

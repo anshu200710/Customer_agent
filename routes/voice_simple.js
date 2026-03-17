@@ -3242,7 +3242,7 @@ router.post("/", async (req, res) => {
     partialMachineNo: "", // accumulates digit groups for machine number
     partialPhoneNo: "", // accumulates digit groups for phone
     customerData: null,
-    lastQuestion: "Namaskar! Rajesh Motors mein aapka swagat hai. Mujhe apni machine ka number btaiye ek ek puraa number.",
+    lastQuestion: "Namaskar! Rajesh Motors mein aapka swagat hai. Kripya apni JCB machine ka number batayein. Ek-ek karke pura number boliye.",
   });
 
   const callData = activeCalls.get(CallSid);
@@ -3265,7 +3265,7 @@ router.post("/process", async (req, res) => {
         retries: 0,
         partialMachineNo: "",
         partialPhoneNo: "",
-        lastQuestion: "Mujhe apni machine ka number btaiye ek ek puraa number.",
+        lastQuestion: "Kripya apni machine ka number batayein. Ek-ek karke pura number boliye.",
       };
       activeCalls.set(CallSid, callData);
     }
@@ -3376,9 +3376,9 @@ router.post("/process", async (req, res) => {
             return res.type("text/xml").send(twiml.toString());
           }
           const noDigitHints = [
-            "Machine par likha number ek ek digit mein boliye.",
-            "Jaise — teen, paanch, do, saat. Aaram se boliye.",
-            "Bill ya kagaz mein dekh ke boliye, main sun raha hoon.",
+            "Kripya machine par likha number ek ek karke dhire dhire boliye.",
+            "Jaise — teen, paanch, do, saat. Aise aaram se boliye.",
+            "Aap registration paper ya machine plate dekh kar dhire se boliye, main sun rahi hoon.",
           ];
           callData.lastQuestion =
             noDigitHints[Math.min(callData.retries - 1, 2)];
@@ -3390,7 +3390,8 @@ router.post("/process", async (req, res) => {
         console.log(
           `   ⏳ Only ${accumulated.length} digit(s) — waiting for more`,
         );
-        callData.lastQuestion = `${accumulated.split("").join(" ")} aaya. Ab baaki digits boliye.`;
+        const readable = accumulated.split("").join(" ");
+        callData.lastQuestion = `Aapne ${readable} yaha tak bataya hai. Kripya uske aage ke number boliye.`;
         askNumber(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
@@ -3453,9 +3454,9 @@ router.post("/process", async (req, res) => {
       callData.machineNoFreshStart = true; // ← key flag: don't blend next turn's digits with old buffer
 
       const retryMessages = [
-        `${triedDisplay} record mein nahi mila. Dobara ek ek digit boliye.`,
-        `Abhi bhi match nahi hua, dhire clearly boliye.`,
-        `Ek baar aur boliye — main dhyan se sun raha hoon.`,
+        `Yeh number ${triedDisplay} humare record mein nahi mila. Kripya number dhyaan se dekh kar dobara boliye.`,
+        `Yeh bhi sahi number nahi laga, kripya apna machine number dhire aur saf aawaz mein boliye.`,
+        `Kripya ek baar aur saaf aawaz mein boliye, main dhyan se sun rahi hoon.`,
       ];
       callData.lastQuestion = retryMessages[Math.min(callData.retries - 1, 2)];
       askNumber(twiml, callData.lastQuestion);
@@ -3516,7 +3517,7 @@ router.post("/process", async (req, res) => {
       if (isAffirmative(rawSpeech)) {
         callData.step = "ask_city";
         callData.retries = 0;
-        callData.lastQuestion = `Achha thik hai! Aapki machine abhi kis jagah par hai? Jis shehar ya gaon mein aapka machine abhi khara hai?`;
+        callData.lastQuestion = `Achha thik hai! Aapki Nearest Service Station konsa hai? Jis shehar ya gaon mein aapka machine abhi khara hai?`;
         ask(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
@@ -3801,8 +3802,8 @@ router.post("/process", async (req, res) => {
         return res.type("text/xml").send(twiml.toString());
       }
 
-      // Ask for registered city name
-      callData.lastQuestion = `Sir, apna registered service center ka naam batiye. Kaunsa branch hai — Jaipur, Kota, Ajmer, Alwar, Sikar, Udaipur, Bhilwara? Taaki mai aapki city sahi se fetch kar saku.`;
+      // Ask for registered service center
+      callData.lastQuestion = `Sir, apna nearest service center ka naam batiye. Kaunsa branch hai — Jaipur, Kota, Ajmer, Alwar, Sikar, Udaipur, Bhilwara? Taaki mai waha service request bhej saku.`;
       ask(twiml, callData.lastQuestion);
       activeCalls.set(CallSid, callData);
       return res.type("text/xml").send(twiml.toString());
@@ -3901,7 +3902,7 @@ router.post("/process", async (req, res) => {
             // BUG 4b: Log why rejected
             console.log(`   ❌ BUG 4b FIX: Invalid Indian mobile prefix: ${firstDigit}`);
             callData.retries = (callData.retries || 0) + 1;
-            ask(twiml, `Yeh number sahi nahi — ${firstDigit} se start ho raha hai. 6, 7, 8 ya 9 se hona chahiye. Dobara boliye.`);
+            ask(twiml, `Yeh number sahi nahi hai kyunki yeh ${firstDigit} se shuru ho raha hai. India mein mobile number 6, 7, 8 ya 9 se shuru hote hain. Kripya apna sahi 10 anko ka mobile number dobara boliye.`);
             activeCalls.set(CallSid, callData);
             return res.type("text/xml").send(twiml.toString());
           }
@@ -3909,7 +3910,7 @@ router.post("/process", async (req, res) => {
           // BUG 4b: Log wrong length — ask again
           console.log(`   ❌ BUG 4b FIX: Wrong digit length: ${changeDigits.length}`);
           callData.retries = (callData.retries || 0) + 1;
-          ask(twiml, `Bas ${changeDigits.length} digits sune. Pura 10 digit wala number dobara boliye.`);
+          ask(twiml, `Mujhe sirf ${changeDigits.length} number sunai diye hain. Kripya apna pura 10 anko ka mobile number dobara boliye.`);
           activeCalls.set(CallSid, callData);
           return res.type("text/xml").send(twiml.toString());
         }
@@ -3959,7 +3960,7 @@ router.post("/process", async (req, res) => {
           activeCalls.set(CallSid, callData);
           return res.type("text/xml").send(twiml.toString());
         }
-        callData.lastQuestion = "Theek hai. Apna naya phone number boliye — 10 digits.";
+        callData.lastQuestion = "Theek hai. Kripya apna naya 10 anko ka phone number boliye.";
         askNumber(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
@@ -4060,7 +4061,7 @@ router.post("/process", async (req, res) => {
             activeCalls.set(CallSid, callData);
             return res.type("text/xml").send(twiml.toString());
           }
-          ask(twiml, `Yeh number ${firstDigit} se start ho raha hai. 6, 7, 8 ya 9 se boliye — dobara se start kariye.`);
+          ask(twiml, `Yeh number ${firstDigit} se start ho raha hai. Kripya apna sahi 10 anko ka mobile number boliye. 6, 7, 8 ya 9 se suru karke boliye.`);
           callData.partialPhoneNo = "";
           activeCalls.set(CallSid, callData);
           return res.type("text/xml").send(twiml.toString());
@@ -4090,8 +4091,8 @@ router.post("/process", async (req, res) => {
         }
         callData.lastQuestion =
           knownPhone && knownPhone !== "Unknown"
-            ? `Humhare paas number ${knownPhone.split("").join(" ")} hai. Kya yeh sahi hai ya badalna hai?`
-            : "Apna mobile number boliye — 10 digits.";
+            ? `Humhare paas number ${knownPhone.split("").join(" ")} hai. Kya yeh number sahi hai ya aap dusra number dena chahte hain?`
+            : "Kripya apna 10 anko ka mobile number boliye.";
         askNumber(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
@@ -4104,12 +4105,12 @@ router.post("/process", async (req, res) => {
         if (callData.retries >= 5) {
           // FIXED: After 5 retries on incomplete phone, use it or move forward
           console.log(`   ⚠️ ASK_PHONE: Max retries on incomplete phone (${accumulated.length} digits), asking to confirm or re-enter`);
-          callData.lastQuestion = `Bas ${accumulated.length} digits mile. Pura 10 digit number chahiye ya registered phone se kaam chala le?`;
+          callData.lastQuestion = `Mujhe sirf ${accumulated.length} number sunai diye hain. Kripya apna pura 10 anko ka number boliye, ya fir registered phone se kaam chala lein?`;
           askNumber(twiml, callData.lastQuestion);
           activeCalls.set(CallSid, callData);
           return res.type("text/xml").send(twiml.toString());
         }
-        callData.lastQuestion = `${readable} aaya — baaki boliye.`;
+        callData.lastQuestion = `Aapne ${readable} bataya hai. Kripya aage ke bache hue number boliye.`;
         askNumber(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
@@ -4171,12 +4172,12 @@ router.post("/process", async (req, res) => {
         callData.tempPhone = null;
         callData.partialPhoneNo = "";
         callData.retries = 0;
-        callData.lastQuestion = "Theek hai. Sahi phone number boliye.";
+        callData.lastQuestion = "Theek hai. Kripya apna sahi phone number boliye.";
         askNumber(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
       }
-      ask(twiml, "Bas haan boliye ya nahi — kya ye aapka number hai?");
+      ask(twiml, "Bas haan ya nahi mein jawab dijiye — kya je aapka sahi mobile number hai?");
       activeCalls.set(CallSid, callData);
       return res.type("text/xml").send(twiml.toString());
     }
@@ -4211,7 +4212,7 @@ router.post("/process", async (req, res) => {
         callData.step = "ask_phone";
         callData.retries = 0;
         callData.lastQuestion =
-          "Theek hai, dobara boliye.";
+          "Theek hai, kripya apna sahi naya phone number boliye.";
         askNumber(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
@@ -4230,7 +4231,7 @@ router.post("/process", async (req, res) => {
       }
       ask(
         twiml,
-        "Bhai sahab, bas haan ya nahi boliye — number sahi hai ki nahi?",
+        "Bhai sahab, kripya haan ya nahi mein batayein — kya yeh number sahi hai ya nahi?",
       );
       activeCalls.set(CallSid, callData);
       return res.type("text/xml").send(twiml.toString());
@@ -4836,12 +4837,12 @@ router.post("/process", async (req, res) => {
     // response and speak it using a warm, professional female voice.
     // =========================================================
     console.log(`   🤖 AI FALLBACK: Input "${rawSpeech}" didn't match any specific step or intent.`);
-    
+
     const context = `Customer is calling JCB customer service. Current step: '${callData.step}'. They previously were asked: '${callData.lastQuestion || "N/A"}'. The customer said: "${rawSpeech}". Provide a short, polite, warm, and professional response in Hindi to address their confusion or guide them back to answering the question. KEEP IT UNDER 2 SENTENCES.`;
-    
+
     const aiResponse = await getConversationResponse(rawSpeech || "Hello", context);
     console.log(`   🤖 AI RESPONSE: "${aiResponse}"`);
-    
+
     const gather = twiml.gather({
       input: "speech dtmf",
       language: "hi-IN",
@@ -4879,7 +4880,7 @@ function _buildPhoneQuestion(callData) {
     const readable = knownPhone.split("").join(" ");
     return `Humhare paas number ${readable} hai. Kya yeh sahi hai?`;
   }
-  return "Apna mobile number boliye, ek ek digit mein.";
+  return "Kripya apna 10 anko ka mobile number boliye.";
 }
 
 /**
