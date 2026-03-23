@@ -1,0 +1,489 @@
+Here are all possible conversations your JCB AI voice caller will handle, based on the real call recordings:
+
+---
+
+## 🟢 SIMPLE CALLS (Fast, Clean)
+
+---
+
+**CALL 1 — Customer gives everything at once**
+
+AI: Haan ji, bataiye.
+Customer: Machine 3505447, engine start nahi ho rahi, Bhilwara mein hai, 9876543210 pe call karo.
+AI: Achha. Band hai ya chal rahi?
+Customer: Bilkul band hai.
+AI: Theek hai. Complaint ho gayi. Engineer jaldi call karega. Dhanyavaad!
+
+---
+
+**CALL 2 — Normal smooth call**
+
+AI: Ji, machine number bataiye?
+Customer: 35054.
+AI: Kya problem aa rahi?
+Customer: Hydraulic nahi chal rahi, boom nahi uth raha.
+AI: Band hai ya chal rahi?
+Customer: Engine chal raha hai, sirf hydraulic nahi.
+AI: Kahan hai — Jaipur, Kota, Ajmer?
+Customer: Jaipur.
+AI: Aapka number?
+Customer: 9988776655.
+AI: Complaint ho gayi. Engineer aata hai. Dhanyavaad!
+
+---
+
+**CALL 3 — Very short call (15 seconds)**
+
+AI: Bataiye.
+Customer: 55667, engine smoke aa rahi, band ho gayi, Kota, 9977553311.
+AI: Theek hai. Complaint ho gayi. Engineer jaldi call karega!
+
+---
+
+## 🔧 COMPLAINT TYPE CALLS
+
+---
+
+**CALL 4 — Engine Not Starting**
+
+AI: Kya problem aa rahi machine mein?
+Customer: Start hi nahi ho rahi subah se.
+AI: Bilkul band hai?
+Customer: Haan, kuch nahi ho raha.
+AI: Shahar?
+Customer: Sikar.
+AI: Number?
+Customer: 8877665544.
+AI: Ho gayi complaint. Engineer call karega.
+
+*Variations customer may say:*
+- "Chalu nahi hoti"
+- "Ignition nahi ho raha"
+- "Shuru nahi ho rahi"
+- "Band padi hai subah se"
+- "मशीन चालू नहीं हो रही"
+
+---
+
+**CALL 5 — Engine Overheating**
+
+AI: Kya problem?
+Customer: Bahut garam ho rahi hai, dhak jaati hai baar baar.
+AI: Chal rahi hai ya band ho jaati?
+Customer: Chal rahi hai par temperature badh jaata hai, main band kar deta hun.
+AI: Kahan hai?
+Customer: Ajmer.
+AI: Number?
+Customer: 9765432100.
+AI: Complaint ho gayi!
+
+*Variations:*
+- "Dhak gayi" (Rajasthani)
+- "Temperature bahut badh raha"
+- "Paani ubhal raha hai"
+- "Radiator garam ho raha"
+
+---
+
+**CALL 6 — Oil / Coolant Leakage**
+
+AI: Kya problem?
+Customer: Tel nikal raha hai neeche se, bahut aa raha hai.
+AI: Chal rahi hai?
+Customer: Chal rahi hai abhi par tel nikal rha.
+AI: Shahar?
+Customer: Kota.
+AI: Number?
+Customer: 9823456701.
+AI: Note ho gayi. Engineer aayega!
+
+*Variations:*
+- "Tel nikal ryo" (Rajasthani — oil leaking)
+- "Paani nikal rha" (coolant leak)
+- "Rissa aa rha hai" (seeping/dripping)
+- "Teli nikal rahi"
+- "Oil leak ho raha"
+
+---
+
+**CALL 7 — Hydraulic Problem**
+
+AI: Kya problem?
+Customer: Boom nahi uth raha, jack kaam nahi kar raha.
+AI: Engine chal raha hai?
+Customer: Haan engine theek hai, sirf hydraulic nahi.
+AI: Kahan hai machine?
+Customer: Construction site pe, Alwar mein.
+AI: Number?
+Customer: 9911223344.
+AI: Complaint ho gayi!
+
+*Variations:*
+- "Dabbe ki problem" (bucket problem)
+- "Arm nahi uth raha"
+- "Hawa band ho gayi" (hydraulic pressure gone)
+- "Jack kaam nahi karta"
+- "Bucket nahi chalti"
+
+---
+
+**CALL 8 — Engine Smoke**
+
+AI: Kya problem?
+Customer: Kaala dhuan aa raha hai machine se, bahut aa raha.
+AI: Chal rahi hai?
+Customer: Chal rahi hai par dhuan nikal rha.
+AI: Shahar?
+Customer: Bhilwara.
+AI: Number?
+Customer: 9876541230.
+AI: Complaint ho gayi. Engineer call karega!
+
+*Variations:*
+- "Dhua nikal rha" (Rajasthani)
+- "Dhumra aa raha" (Rajasthani)
+- "Smoke nikal rhi hai"
+
+---
+
+**CALL 9 — AC Not Working**
+
+AI: Kya problem?
+Customer: AC bilkul nahi chal raha, bahut garmi hai cab mein.
+AI: Machine ka kaam theek hai?
+Customer: Haan machine theek hai bas AC nahi.
+AI: Kahan hai?
+Customer: Udaipur.
+AI: Number?
+Customer: 9654321087.
+AI: Complaint ho gayi!
+
+*Variations:*
+- "Hawa nahi aa rahi" (Rajasthani — no air/AC)
+- "Thanda nahi kar raha"
+- "AC band hai"
+
+---
+
+**CALL 10 — Abnormal Noise / Vibration**
+
+AI: Kya problem?
+Customer: Khatakhat awaaz aa rahi hai engine se, bahut vibration bhi.
+AI: Chal rahi ya band?
+Customer: Chal rahi hai par awaaz bahut aa rahi.
+AI: Shahar?
+Customer: Bikaner.
+AI: Number?
+Customer: 9812345670.
+AI: Complaint ho gayi!
+
+*Variations:*
+- "Tak tak sound aa rha"
+- "Hil rahi bahut"
+- "Khat khat awaaz"
+- "Bahut vibration hai"
+- "Koi awaaz aa rahi andar se"
+
+---
+
+**CALL 11 — Accelerator / Race Problem**
+
+AI: Kya problem?
+Customer: Race nahi lag rahi, accelerator daba ke rakha hai par speed nahi aati.
+AI: Chal rahi hai?
+Customer: Chal rahi hai bas power nahi.
+AI: Kahan?
+Customer: Jodhpur.
+AI: Number?
+Customer: 9988001122.
+AI: Complaint register ho gayi!
+
+*Rajasthani variation:*
+- "Race nahi lag rhi mhane" (no throttle response)
+
+---
+
+**CALL 12 — Brake Problem**
+
+AI: Kya problem?
+Customer: Brake nahi lag rahi, rokti nahi machine.
+AI: Chal rahi hai?
+Customer: Chal rahi hai par ruk nahi rahi.
+AI: Kahan?
+Customer: Nagaur.
+AI: Number?
+Customer: 9900112233.
+AI: Complaint ho gayi!
+
+---
+
+## 🗣️ RAJASTHANI DIALECT CALLS
+
+---
+
+**CALL 13 — Full Rajasthani**
+
+AI: Ji, machine number bataiye?
+Customer: Mharo machine number 77889 hai.
+AI: Problem kya ho rahi?
+Customer: Mhane samajh nahi aa rha, tel nikal ryo hai aur dhak jaati hai.
+AI: Chal rahi ya band?
+Customer: Band padi hai.
+AI: Kahan ho — site pe?
+Customer: Haan khet pe hai.
+AI: Shahar?
+Customer: Ajmer.
+AI: Number?
+Customer: 9823456701.
+AI: Ho gayi complaint. Engineer aata hai jald. Dhanyavaad!
+
+**Rajasthani words used:**
+- Mharo = Mera (my)
+- Mhane = Mujhe (me)
+- Tel nikal ryo = Tel nikal raha (oil leaking)
+- Dhak jaati = Overheat hoti (overheating)
+- Band padi = Band ho gayi (breakdown)
+- Khet pe = Field/site pe (onsite)
+
+---
+
+## ⚠️ DIFFICULT / NOISE CALLS
+
+---
+
+**CALL 14 — Customer Confused (Wrong Reason for Call)**
+
+AI: Ji, machine number bataiye?
+Customer: Papa se baat karni hai.
+AI: Ji, machine number bataiye please?
+Customer: Baat karna tha sirf.
+AI: Ji yeh JCB service number hai. Machine number bataiye?
+Customer: 3505447.
+AI: Kya problem aa rahi?
+Customer: Engine start nahi ho rahi.
+AI: Achha. Band hai?
+Customer: Haan.
+AI: Shahar?
+Customer: Bhilwara.
+AI: Number?
+Customer: 9876543210.
+AI: Complaint ho gayi. Engineer call karega!
+
+---
+
+**CALL 15 — Customer Doesn't Know the Problem**
+
+AI: Kya problem aa rahi?
+Customer: Mujhe nahi pata kya problem hai, bas kuch theek nahi lag raha.
+AI: Theek hai — machine chal rahi hai ya band ho gayi?
+Customer: Band ho gayi hai.
+AI: Koi awaaz aa rhi thi pehle? Ya dhuan, garam hua?
+Customer: Haan dhuan aa raha tha.
+AI: Samjha — smoke problem. Shahar?
+Customer: Bikaner.
+AI: Number?
+Customer: 9977665544.
+AI: Complaint ho gayi. Engineer call karega!
+
+---
+
+**CALL 16 — Invalid / Garbled Phone Number**
+
+AI: Aapka mobile number?
+Customer: 3505467, 456785.
+AI: 10 digit mobile number chahiye ji, 6 ya 9 se shuru hota hai.
+Customer: 9876543210.
+AI: Theek hai. Complaint ho gayi!
+
+---
+
+**CALL 17 — City Name Not Clear (STT Error)**
+
+AI: Kaunse shahar mein hai machine?
+Customer: Bhilwada. (STT garbled)
+AI: Zara clearly bataiye — Bhilwara, Jaipur, Kota, Ajmer?
+Customer: Bhilwara.
+AI: Achha Bhilwara. Number?
+Customer: 9812300012.
+AI: Complaint ho gayi!
+
+---
+
+**CALL 18 — Three Silences (Network Problem)**
+
+AI: Ji, machine number bataiye?
+Customer: [SILENCE]
+AI: Ji? Sun pa rahe hain?
+Customer: [SILENCE]
+AI: Hello? Network theek hai?
+Customer: [SILENCE]
+AI: Lagta hai network mein dikkat hai. Main thodi der mein dobara call karti hun. Dhanyavaad ji.
+*(Call ends)*
+
+---
+
+**CALL 19 — Angry / Urgent Customer**
+
+AI: Kya problem aa rahi?
+Customer: Bahut badi problem hai! Machine band hai, kaam ruka hua hai, jaldi bhejo koi!
+AI: Ji bilkul. Machine number?
+Customer: 88441, jaldi karo!
+AI: City?
+Customer: Alwar, aur sawaal mat poocho.
+AI: Number?
+Customer: 9911223344.
+AI: Complaint ho gayi. Engineer abhi call karega. Dhanyavaad!
+
+---
+
+**CALL 20 — Machine Pre-Identified (Called from App)**
+
+AI: Haan ji Ramesh ji, machine 3505447 ke baare mein call hua hai. Kya problem aa rahi?
+Customer: Engine start nahi ho rahi.
+AI: Band hai?
+Customer: Haan.
+AI: Number confirm karo — 9876543210 sahi hai?
+Customer: Haan sahi hai.
+AI: Theek hai. Complaint ho gayi. Engineer call karega!
+
+---
+
+## 📊 QUICK REFERENCE — WHAT AI ASKS & IN WHAT ORDER
+
+```
+1. Machine number?      → 4-8 digit number
+2. Kya problem?         → complaint type
+3. Chal rahi ya band?   → machine status
+4. Kahan hai / shahar?  → city
+5. Aapka number?        → 10-digit mobile
+```
+
+**AI skips any question if customer already answered it in a previous turn. If customer gives all 5 in one sentence, AI submits immediately.**
+
+---
+
+## 📋 ALL HINDI/RAJASTHANI WORDS AI UNDERSTANDS
+
+| What Customer Says | What AI Understands |
+|---|---|
+| Start nahi / Chalu nahi / Band padi | Engine Not Starting |
+| Dhuan aa raha / Dhua nikal rha | Engine Smoke |
+| Garam / Dhak gayi / Temperature badh raha | Engine Overheating |
+| Tel nikal ryo / Paani nikal rha / Rissa | Oil Leakage |
+| Boom / Jack / Hydraulic / Dabba / Bucket | Hydraulic Failure |
+| Race nahi / Accelerator problem | Accelerator Problem |
+| AC nahi / Hawa nahi / Thanda nahi | AC Not Working |
+| Brake nahi / Rokti nahi | Brake Failure |
+| Khatakhat / Awaaz / Vibration | Abnormal Noise |
+| Band / Khadi / Stop / Ruk gayi / Chalta nahi | Breakdown status |
+| Chal rahi / Running / Thodi dikkat | Running With Problem |
+| Site / Khet / Bahar / Sadak pe | Onsite location |
+| Workshop / Garage / Shed | Workshop location |
+| Mharo = Mera, Mhane = Mujhe | Rajasthani — understood |
+| Ho gyo = Ho gaya, Aavo = Aao | Rajasthani — understood |
+
+
+
+
+Here's a complete message you can use — for sharing with your team, developer, or investor:
+
+JCB AI Voice Call System — What I Built & What I Want
+
+What This System Does
+I built an AI-powered voice call system for Rajesh Motors JCB service in Rajasthan. When a JCB machine breaks down, the customer calls our service number. Instead of a human agent picking up, my AI agent "Priya" answers the call, talks to the customer in natural Hindi and Rajasthani dialect, collects all the complaint details, and automatically registers the service complaint in our system — without any human involvement.
+The entire call takes 45 to 90 seconds. The engineer gets notified immediately.
+
+Why I Built This
+Before this system, customers had to call our service center and wait for a human agent to pick up. Agents were busy, calls were missed, complaint details were entered manually and sometimes incorrectly. Customers in rural Rajasthan speak Rajasthani dialect and broken Hindi — not everyone understood them properly.
+I wanted a system that:
+
+Answers every call instantly, 24 hours a day, 7 days a week
+Understands Rajasthani dialect — words like "tel nikal ryo", "dhak gayi", "band padi", "race nahi lag rahi"
+Collects complaint data accurately without human errors
+Registers the complaint automatically in our backend system
+Feels like talking to a real human agent, not a robot
+
+
+How It Works — Step by Step
+Step 1 — Call Comes In
+Customer calls the JCB service number. Twilio receives the call and connects it to my Node.js server.
+Step 2 — AI Greets
+AI agent Priya says: "Ji, machine number bataiye?"
+If the machine number was already sent in the call URL (from our app), Priya greets the customer by name and skips straight to asking about the problem.
+Step 3 — Conversation
+Priya asks questions one by one, in this order:
+
+Machine number (4–8 digits)
+What problem (complaint type)
+Machine status (running or completely stopped)
+City / location
+Mobile number
+
+If the customer gives multiple answers in one sentence, Priya captures all of them at once and skips ahead.
+Step 4 — Data Extraction
+Every customer reply goes through two layers:
+
+Regex extraction — catches numbers, city names, complaint keywords in both Hindi and Devanagari script (भीलवाड़ा, चालू नहीं, बंद है)
+AI (Groq LLaMA 3.3 70B) — understands natural language, Rajasthani dialect, and ambiguous replies
+
+Step 5 — Complaint Submitted
+Once all 5 required fields are collected, the system automatically calls our backend API and registers the complaint. Priya tells the customer their complaint number and says the engineer will call soon.
+Step 6 — Engineer Gets Job
+The complaint appears in our system with all details. The nearest engineer is assigned automatically.
+
+What Technology I Used
+
+Twilio — for receiving phone calls and converting speech to text (STT)
+Google Wavenet Voice (hi-IN-Wavenet-D) — natural Hindi female voice for Priya
+Groq + LLaMA 3.3 70B — AI brain that understands the conversation
+Node.js + Express — backend server that handles the call flow
+Rajesh Motors Backend API — where complaints are registered
+
+
+What Is Working Well Right Now
+
+AI answers in under 1 second after customer speaks
+Understands 30+ Rajasthani dialect words and phrases
+Correctly extracts machine numbers, phone numbers, city names from natural speech
+Handles noise and irrelevant replies — repeats the same question without confusing the customer
+Rejects invalid phone numbers (6-digit machine numbers mistaken as phones)
+City name fuzzy matching — "Bhilwada" is understood as "Bhilwara", "Jaypur" as "Jaipur"
+Devanagari script support — "भीलवाड़ा" and "चालू नहीं" are correctly parsed from STT output
+job_location auto-defaults to "Onsite" if customer never mentions it
+Pre-identified machine calls skip 2–3 turns and finish faster
+Graceful hangup after 3 silences with polite message
+
+
+What Needs to Be Improved
+This is the honest list of what I want fixed and upgraded:
+1. STT Accuracy for Rajasthani Dialect
+Twilio's speech-to-text sometimes misheard Rajasthani words badly. "Bhilwara" became "Bhilwada", numbers were sometimes completely wrong. I want to test Deepgram STT or Google STT with custom vocabulary hints for JCB-specific words like machine model names, city names, and complaint keywords. Better STT = everything downstream works better.
+2. Machine Number Lookup Mid-Call
+When a customer gives their machine number, the system should immediately validate it against our database and pull the customer's name, city and registered phone. Right now this lookup exists but is not always fast enough. I want it to run in parallel while Priya is still speaking the next question — no wait time for the customer.
+3. Complaint Detail Capture
+Right now I capture the complaint type (Engine Not Starting, Hydraulic Failure, etc.) but I am not capturing enough detail. A good human agent would ask follow-up questions like "How long has this problem been there?" or "Did any warning light come on?". I want Priya to ask 1–2 natural follow-up questions when time allows, so the engineer arrives better prepared.
+4. Multi-Language Confidence
+Some customers speak a mix of Hindi, Rajasthani and English in the same sentence. The AI handles this but occasionally misses a word. I want to add a language detection confidence score so if the AI is not confident about what was said, it asks once to confirm rather than silently proceeding with wrong data.
+5. Call Summary SMS
+After every successful complaint registration, the customer should receive an SMS with their complaint number and expected response time. Currently only the voice confirmation is given. SMS gives them a reference they can use later.
+6. Callback When Line Busy / Missed
+If a customer calls and the system fails for any reason (server timeout, API down), right now that call is lost. I want an automatic callback queue — if complaint registration fails, the system should retry calling the customer within 10 minutes and complete the complaint.
+7. Live Dashboard
+I want a real-time dashboard showing today's calls, complaint status, which calls succeeded, which failed, average call duration, most common complaint types by city. Right now all this lives in server logs only.
+8. Voice Tone Improvement
+Priya's voice is Google Wavenet which sounds good but still slightly robotic on some phrases. I want to test ElevenLabs Hindi voice or fine-tune the SSML prosody (speed, pause, pitch) so the call feels even more human. Based on my actual recordings of real human agents, the ideal is short bursts of 3–6 words, warm tone, occasional "achha" and "haan" acknowledgments.
+9. Engineer Confirmation Loop
+After the complaint is registered, if the assigned engineer has not called the customer within 30 minutes, the AI should automatically call the customer again and either connect them to the engineer directly or escalate to a human supervisor.
+10. Analytics on Missed Data
+When a call ends without collecting all required fields (customer hung up, 3 silences, turn limit hit), I want to log exactly which field was missing and what the last thing the customer said was. This helps me understand what conversation patterns need to be improved.
+
+My Vision for This System
+Right now this handles basic complaint registration. My vision is to expand this into a complete JCB service lifecycle voice assistant:
+
+Customer calls → complaint registered (done)
+Engineer calls back → AI assists engineer with job details
+Job completed → AI calls customer to confirm satisfaction
+Warranty / AMC queries → AI answers from customer history
+Parts availability → AI checks stock and gives ETA
+
+Every JCB customer in Rajasthan should feel like they have a dedicated, always-available service coordinator in their pocket who speaks their language, knows their machine, and gets things done in under 2 minutes.

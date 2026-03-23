@@ -5,7 +5,7 @@ import bodyParser from 'body-parser';
 
 import outboundRoutes from './routes/outbound.js';
 import voiceAiRoutes from './routes/voice_simple.js';
-// import voiceAiRoutes from './routes/voice_ai.js';
+import voiceRoutes from './routes/voiceRoutes.js';
 
 
 const app = express();
@@ -17,7 +17,7 @@ app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
-app.use('/voice', voiceAiRoutes);
+app.use('/voice', voiceRoutes);
 app.use('/outbound', outboundRoutes);
 app.use("/audio", express.static("public/audio"));
 
