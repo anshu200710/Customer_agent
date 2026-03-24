@@ -487,3 +487,11 @@ Warranty / AMC queries → AI answers from customer history
 Parts availability → AI checks stock and gives ETA
 
 Every JCB customer in Rajasthan should feel like they have a dedicated, always-available service coordinator in their pocket who speaks their language, knows their machine, and gets things done in under 2 minutes.
+
+
+
+
+i want to add in this if customer give some details means in a line all or some so get that not ask again and try to fetch that information from the line and first tells their phone number like this sir aapka ye phone number hai jisme ye last digit hai 79 yehi rakhna hai ya badlvana hai if need to change so ask phone and change 
+
+
+

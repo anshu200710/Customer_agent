@@ -52,570 +52,345 @@ const SERVICE_CENTERS = [
 ];
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🔊 SSML HELPER — makes TTS sound human
+   🔊 SSML
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
-/**
- * Wraps plain text in SSML so Google Wavenet sounds natural.
- * - Adds brief pauses at sentence ends
- * - Slows down number-by-number reading
- * - Uses <prosody> to vary rate/pitch slightly (warmth)
- */
 export function toSSML(text) {
-    if (!text) return "<speak>Ek minute.</speak>";
-
-    // Escape XML special chars first
-    let s = text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-
-    // Sentence-level breathing pause
-    s = s.replace(/([।\.!?])\s+/g, '$1<break time="350ms"/> ');
-
-    // Short comma/list pause
-    s = s.replace(/,\s*/g, ',<break time="150ms"/> ');
-
-    // Numbers spoken digit by digit (for complaint IDs)
-    // We'll handle that separately in voice.js when we know the ID
-
+    if (!text) return "<speak>Ji.</speak>";
+    let s = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    s = s.replace(/([।\.!?])\s+/g, '$1<break time="250ms"/> ');
     return `<speak><prosody rate="medium" pitch="+1st">${s}</prosody></speak>`;
 }
-
-/**
- * Reads a complaint/SAP ID naturally, digit by digit with pauses.
- */
 export function toSSMLId(idStr) {
-    const digits = String(idStr).split("").join('<break time="200ms"/>');
-    return `<speak><prosody rate="slow">${digits}</prosody></speak>`;
+    return `<speak><prosody rate="slow">${String(idStr).split("").join('<break time="200ms"/>')}</prosody></speak>`;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    🧠 SYSTEM PROMPT
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
 function buildSystemPrompt(callData) {
     const d = callData.extractedData;
+    const customerLine = callData.customerData
+        ? `CUSTOMER: ${callData.customerData.name} | Machine:${callData.customerData.machineNo} | Phone:${callData.customerData.phone}`
+        : `CUSTOMER: NOT IDENTIFIED`;
+    const status = `M:${d.machine_no || "❌"} P:${d.complaint_title || "❌"} S:${d.machine_status || "❌"} C:${d.city || "❌"} Ph:${d.customer_phone || "❌"}`;
 
-    const customerBlock = callData.customerData
-        ? `CUSTOMER IDENTIFIED: ${callData.customerData.name} | Machine: ${callData.customerData.machineNo} | City: ${callData.customerData.city} | Phone: ${callData.customerData.phone}`
-        : `CUSTOMER NOT YET IDENTIFIED — need machine number first`;
+    let ask = "";
+    if (!d.machine_no) ask = "ASK chassis number";
+    else if (!d.complaint_title) ask = "ASK kya problem hai";
+    else if (!d.machine_status) ask = "ASK band hai ya chal rahi";
+    else if (!d.city) ask = "ASK kaunsa shahar";
+    else if (!d.customer_phone || !/^[6-9]\d{9}$/.test(d.customer_phone)) ask = "ASK 10 digit number";
+    else ask = "SUBMIT → ready_to_submit:true";
 
-    // Determine the ONE next field to ask about (strict ordering)
-    let nextAsk = null;
-    let nextQuestion = "";
-    if (!d.machine_no) {
-        nextAsk = "machine_no";
-        nextQuestion = `ASK: "Machine number bataiye?" (4-8 digit number)`;
-    } else if (!d.complaint_title) {
-        nextAsk = "complaint_title";
-        nextQuestion = `ASK: "Kya problem aa rahi machine mein?"`;
-    } else if (!d.machine_status) {
-        nextAsk = "machine_status";
-        nextQuestion = `ASK: "Machine chal rahi hai ya bilkul band ho gayi?"`;
-    } else if (!d.city) {
-        nextAsk = "city";
-        nextQuestion = `ASK: "Kaunse shahar mein hai machine?"`;
-    } else if (!d.customer_phone || !/^[6-9]\d{9}$/.test(d.customer_phone)) {
-        nextAsk = "customer_phone";
-        nextQuestion = `ASK: "Aapka 10 digit mobile number?"`;
-    }
-    // job_location is optional ask — defaults to "Onsite" at submit time
+    return `Tu JCB service agent Priya hai — Rajesh Motors. Warm, fast, Hindi/Rajasthani samjhe.
+${customerLine}
+DATA: ${status}
+NOW: ${ask}
 
-    const statusLine = [
-        `machine=${d.machine_no || "❌"}`,
-        `problem=${d.complaint_title || "❌"}`,
-        `status=${d.machine_status || "❌"}`,
-        `where=${d.job_location || "❌"}`,
-        `city=${d.city || "❌"}`,
-        `phone=${d.customer_phone || "❌"}`,
-    ].join(" | ");
+RULES (strict):
+1. Max 10 words. Warm tone — "Ji", "Achha ji", "Theek hai ji", "Bilkul ji".
+2. GREEDY: ek turn mein sab extract karo. Jo mila wo extracted mein do.
+3. City SIRF customer ki baat se — API se nahi.
+4. band/start nahi/chalu nahi → machine_status:"Breakdown" auto.
+5. filter/service → complaint_title:"Service/Filter Change", status:"Running With Problem".
+6. Multiple problems → pehla complaint_title, baaki complaint_details mein.
+7. ek minute/ruko → extracted:{} "Ji zarur, main hun."
+8. Already-filed fields KABHI mat poocho dobara.
+9. "pehle wala number" / "last mein 59" → use previously mentioned number.
+10. "pata nahi chassis" → "Machine ke dashboard pe plate pe number hota hai ji."
 
-    return `Tu ek JCB service coordinator hai — Rajesh Motors, Rajasthan. Tera naam Priya hai.
-Tu bilkul ek REAL HUMAN AGENT ki tarah baat karti hai — natural, warm, conversational.
+RAJASTHANI: tel nikal ryo=Oil Leakage | dhak gyi=Overheating | band padi=Breakdown
+rissa=leaking | filttar=filter | race nahi/ras nahi=Accelerator | khatak=Noise
 
-${customerBlock}
-DATA: ${statusLine}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚡ ABHI SIRF YEH KAR:
-${nextAsk ? nextQuestion : "✅ SAB DATA HAI → ready_to_submit: true karo"}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🔴 CRITICAL RULES:
-
-1. GREEDY COLLECTION: Agar user ek hi turn mein multiple cheezein bata de
-   (e.g., "machine band hai site pe bhilwara mein 9876543210 number hai")
-   toh SAB extract karo ek saath. Sirf wo poocho jo abhi bhi missing hai.
-
-2. STRICT QUESTION ORDER (jo missing hai pehle wo poocho):
-   machine_no → complaint_title → machine_status → city → customer_phone
-   job_location mat poocho — system auto-detect karta hai.
-
-3. RESPONSE: Max 5-8 words. "Achha." ya "Haan." se acknowledge, phir seedha next question.
-
-4. NOISE DETECT: Agar user ki baat mein koi data NAHI (e.g., "papa", "baat karna", "punjabi"):
-   → Same question dobara poocho. extracted: {} do.
-
-5. PHONE: Sirf 10 digit, 6/7/8/9 se shuru. "3505467" ya "456785" phone NAHI hai.
-   Agar invalid → "10 digit number chahiye ji."
-
-6. MACHINE NUMBER: 4-8 digits. "Machine operator 3505447" → machine_no: "3505447"
-
-7. USER HINDI/DEVANAGARI MEIN BOLE TO SAMJHO:
-   "चालू नहीं हो रहा" = Engine Not Starting (machine context pe)
-   "भीलवाड़ा" = BHILWARA city
-   "बंद है" = Breakdown | "चल रही है" = Running With Problem
-
-8. KABHI MAT BOLO: "Rajesh Motors se", "note kar liya", long sentences
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RAJASTHANI: Mharo=Mera | Tel nikal ryo=Oil leak | Dhak gyi=Overheat
-Band padi=Breakdown | Race nahi=Accelerator | Khatakhat=Noise
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-📤 OUTPUT (STRICTLY):
-[Response] ### {"intent":"continue","extracted":{"machine_no":"...","complaint_title":"...","machine_status":"...","city":"...","customer_phone":"..."},"ready_to_submit":false}
-
-FIELD NAMES (exact, no variations):
-machine_no | complaint_title | machine_status | job_location | city | customer_phone | complaint_details
-
-ready_to_submit: true ONLY when: machine_no ✅ complaint_title ✅ machine_status ✅ city ✅ customer_phone(10 digit) ✅`;
+OUTPUT: [response] ### {"extracted":{"complaint_title":"","machine_status":"","city":"","customer_phone":"","complaint_details":""},"ready_to_submit":false}`;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    🤖 GET AI RESPONSE
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
 export async function getSmartAIResponse(callData) {
     try {
-        // ── STEP 1: Sanitize invalid values ──────────────────────
         callData.extractedData = sanitizeExtractedData(callData.extractedData);
 
-        // ── STEP 2: Greedy regex over ALL user messages ───────────
-        // Catches data the AI JSON missed (wrong field names, etc.)
-        let regexAccum = { ...callData.extractedData };
+        // Regex over all turns
+        let acc = { ...callData.extractedData };
         for (const msg of callData.messages) {
             if (msg.role === "user") {
-                const rx = extractWithRegex(msg.text, regexAccum);
-                regexAccum = { ...regexAccum, ...rx };
+                const rx = extractWithRegex(msg.text, acc);
+                acc = { ...acc, ...rx };
             }
         }
-        // Merge — only fill missing fields, never overwrite valid data
-        for (const [k, v] of Object.entries(regexAccum)) {
-            if (v && !callData.extractedData[k]) {
-                callData.extractedData[k] = v;
-            }
+        for (const [k, v] of Object.entries(acc)) {
+            if (v && !callData.extractedData[k]) callData.extractedData[k] = v;
         }
-        // Always re-sanitize after regex merge (belt + suspenders)
         callData.extractedData = sanitizeExtractedData(callData.extractedData);
 
-        const systemPrompt = buildSystemPrompt(callData);
+        // Auto status
+        if (callData.extractedData.complaint_title && !callData.extractedData.machine_status) {
+            const t = callData.extractedData.complaint_title.toLowerCase();
+            callData.extractedData.machine_status = /engine not starting|not starting/.test(t)
+                ? "Breakdown" : "Running With Problem";
+        }
 
         const messages = [
-            { role: "system", content: systemPrompt },
-            ...callData.messages.map(m => ({
+            { role: "system", content: buildSystemPrompt(callData) },
+            ...callData.messages.slice(-4).map(m => ({
                 role: m.role === "user" ? "user" : "assistant",
                 content: m.text,
             })),
         ];
-
-        // First turn — inject a silent trigger
         if (callData.messages.length === 0) {
-            messages.push({
-                role: "user",
-                content: callData.customerData
-                    ? `[Call connected. Customer ${callData.customerData.name} is identified. Greet briefly and ask about their problem.]`
-                    : `[Call connected. Ask for machine number naturally.]`,
-            });
+            messages.push({ role: "user", content: "[Call connected]" });
         }
 
-        console.log(`\n🤖 [AI] Calling Groq (llama-3.3-70b)...`);
-
-        const response = await groq.chat.completions.create({
-            model: "llama-3.3-70b-versatile",   // Better model for nuanced Hindi
+        console.log("🤖 [Groq]...");
+        const resp = await groq.chat.completions.create({
+            model: "llama-3.3-70b-versatile",
             messages,
-            temperature: 0.35,                  // Slightly warmer = more human
-            max_tokens: 180,
+            temperature: 0.1,
+            max_tokens: 80,
             top_p: 0.9,
-            stop: null,
         });
 
-        const aiText = response.choices?.[0]?.message?.content?.trim();
-        if (!aiText) throw new Error("Empty AI response");
+        const aiText = resp.choices?.[0]?.message?.content?.trim();
+        if (!aiText) throw new Error("Empty");
+        console.log(`✅ [Groq] "${aiText.substring(0, 80)}"`);
 
-        console.log(`✅ [AI] Raw: "${aiText.substring(0, 100)}..."`);
-
-        // Parse the response (AI JSON + field name normalization)
         const parsed = parseAIResponse(aiText, callData);
 
-        // Regex on current turn (catches what AI JSON missed or named wrong)
-        if (callData.messages.length > 0) {
-            const lastUser = callData.messages.filter(m => m.role === "user").pop()?.text || "";
-            const regexNow = extractWithRegex(lastUser, {
-                ...callData.extractedData,
-                ...parsed.extractedData,
-            });
-            // Merge: regex wins for fields not yet captured
-            for (const [k, v] of Object.entries(regexNow)) {
-                if (v && !parsed.extractedData[k]) {
-                    parsed.extractedData[k] = v;
-                }
-            }
+        // Regex on latest turn
+        const lastUser = callData.messages.filter(m => m.role === "user").pop()?.text || "";
+        const rxNow = extractWithRegex(lastUser, { ...callData.extractedData, ...parsed.extractedData });
+        for (const [k, v] of Object.entries(rxNow)) {
+            if (v && !parsed.extractedData[k]) parsed.extractedData[k] = v;
         }
 
-        // City matching & branch assignment
+        // City matching
         if (parsed.extractedData.city && !parsed.extractedData.city_id) {
-            const matched = matchServiceCenter(parsed.extractedData.city);
-            if (matched) {
-                parsed.extractedData.city = matched.city_name;
-                parsed.extractedData.city_id = matched.branch_code;
-                parsed.extractedData.branch = matched.branch_name;
-                parsed.extractedData.outlet = matched.city_name;
-                parsed.extractedData.lat = matched.lat;
-                parsed.extractedData.lng = matched.lng;
-                console.log(`   🗺️  City matched: ${matched.city_name} → Branch: ${matched.branch_name}`);
+            const m = matchServiceCenter(parsed.extractedData.city);
+            if (m) {
+                parsed.extractedData.city = m.city_name;
+                parsed.extractedData.city_id = m.branch_code;
+                parsed.extractedData.branch = m.branch_name;
+                parsed.extractedData.outlet = m.city_name;
+                parsed.extractedData.lat = m.lat;
+                parsed.extractedData.lng = m.lng;
+                console.log(`   🗺️  ${m.city_name} → ${m.branch_name}`);
             }
         }
 
-        // Final validation gate
+        // Auto status again
+        if (parsed.extractedData.complaint_title && !parsed.extractedData.machine_status) {
+            const t = parsed.extractedData.complaint_title.toLowerCase();
+            parsed.extractedData.machine_status = /engine not starting|not starting/.test(t)
+                ? "Breakdown" : "Running With Problem";
+        }
+
         if (parsed.readyToSubmit) {
             const v = validateData(parsed.extractedData);
-            if (!v.valid) {
-                console.warn(`⚠️  Validation blocked submit: ${v.reason}`);
-                parsed.readyToSubmit = false;
-            }
+            if (!v.valid) { console.warn(`⚠️  ${v.reason}`); parsed.readyToSubmit = false; }
         }
 
-        console.log(`   📊 Machine:${parsed.extractedData.machine_no || "❌"} Problem:${parsed.extractedData.complaint_title || "❌"} City:${parsed.extractedData.city || "❌"} Phone:${parsed.extractedData.customer_phone || "❌"} Submit:${parsed.readyToSubmit}`);
-
         return parsed;
-
-    } catch (error) {
-        console.error("❌ [AI] Error:", error.message);
-        return {
-            text: "Ji, ek second.",
-            intent: "error",
-            extractedData: callData.extractedData || {},
-            readyToSubmit: false,
-        };
+    } catch (err) {
+        console.error("❌ [Groq]", err.message);
+        return { text: "Ji.", intent: "error", extractedData: callData.extractedData || {}, readyToSubmit: false };
     }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    🔍 PARSE AI RESPONSE
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
 function parseAIResponse(aiText, callData) {
-    let text = aiText;
-    let extractedData = { ...callData.extractedData };
-    let readyToSubmit = false;
-    let intent = "continue";
-
+    let text = aiText, extractedData = { ...callData.extractedData };
+    let readyToSubmit = false, intent = "continue";
     try {
-        const sepIdx = aiText.indexOf("###");
-        if (sepIdx !== -1) {
-            text = aiText.substring(0, sepIdx).trim();
-            let jsonStr = aiText.substring(sepIdx + 3).trim().replace(/```json|```/g, "");
-            const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                const j = JSON.parse(jsonMatch[0]);
+        const idx = aiText.indexOf("###");
+        if (idx !== -1) {
+            text = aiText.substring(0, idx).trim();
+            const jm = aiText.substring(idx + 3).trim().replace(/```json|```/g, "").match(/\{[\s\S]*\}/);
+            if (jm) {
+                const j = JSON.parse(jm[0]);
                 intent = j.intent || "continue";
                 readyToSubmit = !!j.ready_to_submit;
-
-                if (j.extracted && typeof j.extracted === "object") {
-                    // Normalize common AI field name mistakes
-                    const KEY_MAP = {
-                        "machine": "machine_no",
-                        "machine_number": "machine_no",
-                        "machineNo": "machine_no",
-                        "problem": "complaint_title",
-                        "complaint": "complaint_title",
-                        "issue": "complaint_title",
-                        "status": "machine_status",
-                        "location": "job_location",
-                        "phone": "customer_phone",
-                        "mobile": "customer_phone",
-                        "number": "customer_phone",
-                        "city_name": "city",
-                        "town": "city",
-                        "subtitle": "complaint_subtitle",
-                        "sub_title": "complaint_subtitle",
-                        "details": "complaint_details",
+                if (j.extracted) {
+                    const KM = {
+                        machine: "machine_no", machine_number: "machine_no", machineNo: "machine_no",
+                        chassis: "machine_no", chassis_no: "machine_no",
+                        problem: "complaint_title", complaint: "complaint_title", issue: "complaint_title",
+                        status: "machine_status", location: "job_location",
+                        phone: "customer_phone", mobile: "customer_phone", number: "customer_phone",
+                        city_name: "city", town: "city",
+                        details: "complaint_details",
                     };
-
                     for (let [k, v] of Object.entries(j.extracted)) {
-                        if (!v || v === "NA" || v === "Unknown" || v === "") continue;
-                        // Normalize key
-                        k = KEY_MAP[k] || k;
-                        // Phone validation
+                        if (!v || v === "NA" || v === "") continue;
+                        k = KM[k] || k;
                         if (k === "customer_phone") {
                             const ph = String(v).replace(/[\s\-]/g, "");
-                            if (/^[6-9]\d{9}$/.test(ph)) {
-                                extractedData[k] = ph;
-                            } else {
-                                console.warn("⚠️  AI gave bad phone, ignoring: " + v);
-                            }
+                            if (/^[6-9]\d{9}$/.test(ph)) extractedData[k] = ph;
+                        } else if (k === "complaint_details" && extractedData.complaint_details) {
+                            if (!extractedData.complaint_details.includes(v))
+                                extractedData.complaint_details += `; ${v}`;
                         } else {
                             extractedData[k] = v;
-                        }
-                    }
-                    // Accumulate complaint_details
-                    if (j.extracted.complaint_details) {
-                        const prev = callData.extractedData.complaint_details || "";
-                        const next = j.extracted.complaint_details;
-                        if (!prev) {
-                            extractedData.complaint_details = next;
-                        } else if (!prev.includes(next)) {
-                            extractedData.complaint_details = `${prev}. ${next}`;
                         }
                     }
                 }
             }
         }
-    } catch (err) {
-        console.error("❌ JSON parse error:", err.message);
-    }
-
-    // Strip any stray JSON/markdown from spoken text
-    text = text
-        .replace(/```json[\s\S]*?```/g, "")
-        .replace(/###[\s\S]*/g, "")
-        .trim();
-
+    } catch { }
+    text = text.replace(/```[\s\S]*?```/g, "").replace(/###[\s\S]*/g, "").trim();
     return { text, intent, extractedData, readyToSubmit };
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🔍 REGEX EXTRACTION — runs on ALL user turns, primary source of truth
+   🔍 REGEX EXTRACTION
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function extractWithRegex(text, cur) {
+    const ex = {}, orig = text;
+    const lo = text.toLowerCase().replace(/[।\.\!\?]/g, " ").replace(/\s+/g, " ").trim();
 
-function extractWithRegex(text, currentData) {
-    const extracted = {};
-    // Work with both original (for Devanagari) and lowercased latin
-    const orig = text;
-    const lower = text.toLowerCase().replace(/[।\.\!\?]/g, " ").replace(/\s+/g, " ").trim();
+    if (/^(ek minute|ek second|ruko|ruk|dhundh|dekh raha|hold on|thoda|leke aata|ek dam|bas)\s*$/i.test(lo)) return {};
 
-    // ── Machine number (4-8 digits) ───────────────────────────────
-    if (!currentData.machine_no) {
-        const cleaned = lower.replace(/\b[6-9]\d{9}\b/g, "").replace(/\b[6-9]\d{8}\b/g, "");
-        const m = cleaned.match(/\b(\d{4,8})\b/);
-        if (m) extracted.machine_no = m[1];
+    // Machine (4-7 digits)
+    if (!cur.machine_no) {
+        const cl = lo.replace(/\b[6-9]\d{9}\b/g, "").replace(/\b[6-9]\d{8}\b/g, "");
+        const m = cl.match(/\b(\d{4,7})\b/);
+        if (m) ex.machine_no = m[1];
     }
 
-    // ── Phone — strictly 10 digits starting 6-9 ──────────────────
-    if (!currentData.customer_phone || !/^[6-9]\d{9}$/.test(currentData.customer_phone)) {
-        const compact = text.replace(/[\s\-,।\.]/g, "");
-        const allSeqs = compact.match(/\d+/g) || [];
-        let found = null;
-        for (const seq of allSeqs) {
-            if (/^[6-9]\d{9}$/.test(seq)) { found = seq; break; }
+    // Phone
+    if (!cur.customer_phone || !/^[6-9]\d{9}$/.test(cur.customer_phone)) {
+        const cmp = text.replace(/[\s\-,।\.]/g, "");
+        for (const seq of cmp.match(/\d+/g) || []) {
+            if (/^[6-9]\d{9}$/.test(seq)) { ex.customer_phone = seq; break; }
             for (let i = 0; i <= seq.length - 10; i++) {
-                const chunk = seq.slice(i, i + 10);
-                if (/^[6-9]\d{9}$/.test(chunk)) { found = chunk; break; }
+                const ch = seq.slice(i, i + 10);
+                if (/^[6-9]\d{9}$/.test(ch)) { ex.customer_phone = ch; break; }
             }
-            if (found) break;
+            if (ex.customer_phone) break;
         }
-        if (found) extracted.customer_phone = found;
     }
 
-    // ── City — match both Devanagari and Latin city names ─────────
-    if (!currentData.city) {
-        // Devanagari city map (how STT outputs Hindi speech)
-        const DEVA_CITIES = {
+    // City
+    if (!cur.city) {
+        const DC = {
             "भीलवाड़ा": "BHILWARA", "जयपुर": "JAIPUR", "अजमेर": "AJMER", "अलवर": "ALWAR",
             "जोधपुर": "JODHPUR", "उदयपुर": "UDAIPUR", "कोटा": "KOTA", "सीकर": "SIKAR",
             "बीकानेर": "BIKANER", "टोंक": "TONK", "झुंझुनू": "JHUNJHUNU", "दौसा": "DAUSA",
             "नागौर": "NAGAUR", "पाली": "PALI", "बाड़मेर": "BARMER", "जैसलमेर": "JAISALMER",
             "चित्तौड़गढ़": "CHITTORGARH", "बूंदी": "BUNDI", "बारां": "BARAN",
-            "झालावाड़": "JHALAWAR", "राजसमंद": "RAJSAMAND", "भरतपुर": "BHARATPUR",
-            "धौलपुर": "DHOLPUR", "करौली": "KARAULI", "सवाई माधोपुर": "SAWAI MADHOPUR",
+            "झालावाड़": "JHALAWAR", "झालावार": "JHALAWAR", "राजसमंद": "RAJSAMAND",
+            "भरतपुर": "BHARATPUR", "धौलपुर": "DHOLPUR", "करौली": "KARAULI",
+            "सवाई माधोपुर": "SAWAI MADHOPUR", "सवाईमाधोपुर": "SAWAI MADHOPUR",
             "डूंगरपुर": "DUNGARPUR", "बांसवाड़ा": "BANSWARA", "प्रतापगढ़": "PRATAPGARH",
             "सिरोही": "SIROHI", "जालोर": "JALOR", "नीम का थाना": "NEEM KA THANA",
             "चुरू": "CHURU", "हनुमानगढ़": "HANUMANGARH", "गंगानगर": "GANGANAGAR",
             "श्रीगंगानगर": "GANGANAGAR", "निम्बाहेड़ा": "NIMBAHERA", "सुजानगढ़": "SUJANGARH",
-            "कोटपूतली": "KOTPUTLI", "भिवाड़ी": "BHIWADI", "रामगंज मंडी": "RAMGANJMANDI",
-            "भरतपुर": "BHARATPUR", "बांसवाड़ा": "BANSWARA", "कोटपुतली": "KOTPUTLI",
+            "कोटपूतली": "KOTPUTLI", "कोटपुतली": "KOTPUTLI", "भिवाड़ी": "BHIWADI",
+            "रामगंज मंडी": "RAMGANJMANDI", "रामगंज": "RAMGANJMANDI",
         };
-        for (const [deva, latin] of Object.entries(DEVA_CITIES)) {
-            if (orig.includes(deva)) { extracted.city = latin; break; }
-        }
-        // Fallback: latin city names
-        if (!extracted.city) {
-            for (const c of SERVICE_CENTERS) {
-                if (lower.includes(c.city_name.toLowerCase())) { extracted.city = c.city_name; break; }
+        for (const [d, l] of Object.entries(DC)) { if (orig.includes(d)) { ex.city = l; break; } }
+        if (!ex.city) {
+            for (const c of [...SERVICE_CENTERS].sort((a, b) => b.city_name.length - a.city_name.length)) {
+                if (lo.includes(c.city_name.toLowerCase())) { ex.city = c.city_name; break; }
             }
         }
     }
 
-    // ── Machine status ────────────────────────────────────────────
-    if (!currentData.machine_status) {
-        // Devanagari + Latin patterns for breakdown
-        const breakdownRx = /(band|khadi|stop|ruk|breakdown|बंद|खड़ी|रुक|नहीं चल|नही चल|चालू नहीं|स्टार्ट नहीं|chalu nahi|chalti nahi|chalti nhi|start nahi|start nhi|shuru nahi|nahi chal|nhi chal|ho nahi rahi|ho nhi rahi|chalu nhi|chal nahi|chal nhi)/;
-        // Devanagari + Latin patterns for running with problem
-        const runningRx = /(chal rahi|chal rha|chal rhi|running|chalu hai|dikkat|problem|thodi|चल रही|चालू है)/;
-        if (breakdownRx.test(lower) || breakdownRx.test(orig)) extracted.machine_status = "Breakdown";
-        else if (runningRx.test(lower) || runningRx.test(orig)) extracted.machine_status = "Running With Problem";
+    // Machine status
+    if (!cur.machine_status) {
+        const bk = /(band|khadi|khari|stop|ruk|breakdown|बंद|खड़ी|chalu nahi|chalti nahi|start nahi|start nhi|nahi chal|ho nahi rahi|chalu nhi|chal nahi|padi hai|khari hai|band padi|chal nhi rahi)/;
+        const rw = /(chal rahi|chal rhi|running|chalu hai|dikkat|problem hai|चल रही|चालू है)/;
+        const sv = /(filter|filttar|service|oil change|tel badlo|सर्विस|फिल्टर)/;
+        if (bk.test(lo) || bk.test(orig)) ex.machine_status = "Breakdown";
+        else if (sv.test(lo)) ex.machine_status = "Running With Problem";
+        else if (rw.test(lo) || rw.test(orig)) ex.machine_status = "Running With Problem";
     }
 
-    // ── Job location ──────────────────────────────────────────────
-    if (!currentData.job_location) {
-        if (/(workshop|garage|shed|yard|वर्कशॉप)/.test(lower) || /(वर्कशॉप|गैराज)/.test(orig))
-            extracted.job_location = "Workshop";
-        else if (/(site|field|bahar|khet|sadak|road|construction|project|onsite|kaam pe|बाहर|साइट|खेत|सड़क)/.test(lower))
-            extracted.job_location = "Onsite";
+    // Job location
+    if (!cur.job_location) {
+        if (/(workshop|garage|वर्कशॉप|गैराज)/.test(lo)) ex.job_location = "Workshop";
+        else if (/(site|field|bahar|khet|sadak|onsite|साइट|खेत)/.test(lo)) ex.job_location = "Onsite";
     }
 
-    // ── Complaint title — Latin + Devanagari patterns ─────────────
-    if (!currentData.complaint_title) {
-        // Engine Not Starting — require machine context word to avoid false positives
-        // "कॉल नहीं हो रही है" should NOT match; "machine chalu nahi" SHOULD
-        const machineCtx = /(machine|jcb|start|chalu|engine|मशीन|जेसीबी|इंजन)/.test(lower);
-        const notStartStrong = /(start nahi|start nhi|shuru nahi|chalu nahi|chalu nhi|chalti nahi|chalti nhi|chal nahi rahi|nahi chal rahi|nhi chal|चालू नहीं|स्टार्ट नहीं|नहीं चल)/.test(lower);
-        const notStartVague = /(ho nahi rahi|ho nhi rahi|nahi ho rahi|nhi ho raha|नहीं हो रही|नहीं हो रहा)/.test(lower) && machineCtx;
-        if (notStartStrong || notStartVague)
-            extracted.complaint_title = "Engine Not Starting";
-        else if (/(dhuan|dhwa|dhua|smoke|dhumra|धुआं|धुआ)/.test(lower) || /धुआं/.test(orig))
-            extracted.complaint_title = "Engine Smoke";
-        else if (/(garam|dhak|overheat|temperature|गर्म|ढक|paani ubhal|ubhal raha|गरम)/.test(lower))
-            extracted.complaint_title = "Engine Overheating";
-        else if (/(tel nikal|oil leak|paani nikal|coolant|fluid nikal|leakage|rissa)/.test(lower) || /तेल निकल/.test(orig))
-            extracted.complaint_title = "Oil Leakage";
-        else if (/(jack|boom|hydraulic|hydro|cylinder|dabba|bucket|dabbe|हाइड्रोलिक|बूम|जैक)/.test(lower))
-            extracted.complaint_title = "Hydraulic System Failure";
-        else if (/(race nahi|race nhi|accelerator|throttle|rpm|रेस नहीं)/.test(lower))
-            extracted.complaint_title = "Accelerator Problem";
-        else if (/(ac nahi|ac nhi|hawa nahi|hawa nhi|air conditioning|thanda nahi|ac band|ठंडा नहीं|हवा नहीं)/.test(lower))
-            extracted.complaint_title = "AC Not Working";
-        else if (/(brake nahi|brake nhi|brakes|rokti nahi|nahi ruk|ब्रेक)/.test(lower))
-            extracted.complaint_title = "Brake Failure";
-        else if (/(headlight|bulb|electrical|bijli nahi|बिजली नहीं|लाइट नहीं)/.test(lower))
-            extracted.complaint_title = "Electrical Problem";
-        else if (/(tire|tyre|pankchar|puncture|टायर|पंक्चर)/.test(lower))
-            extracted.complaint_title = "Tire Problem";
-        else if (/(khatakhat|khat khat|awaaz|aawaz|vibration|hil rahi|आवाज|खटखट|आवाज़)/.test(lower))
-            extracted.complaint_title = "Abnormal Noise";
-        else if (/(steering|स्टीयरिंग)/.test(lower))
-            extracted.complaint_title = "Steering Problem";
-        else if (/(gear|transmission|गियर)/.test(lower))
-            extracted.complaint_title = "Transmission Problem";
+    // Complaint title
+    if (!cur.complaint_title) {
+        const mCtx = /(machine|jcb|start|chalu|engine|मशीन|इंजन)/.test(lo);
+        const ns = /(start nahi|start nhi|chalu nahi|chalu nhi|chalti nahi|chal nahi rahi|nahi chal rahi|चालू नहीं|स्टार्ट नहीं|नहीं चल)/.test(lo);
+        const nsv = /(ho nahi rahi|nahi ho rahi|नहीं हो रही)/.test(lo) && mCtx;
+        const bnd = /(band hai|band ho gayi|band pad|khari hai|बंद है|बंद हो)/.test(lo);
+
+        if (ns || nsv || bnd) ex.complaint_title = "Engine Not Starting";
+        else if (/(filter|filttar|service|oil change|tel badlo|सर्विस|फिल्टर)/.test(lo)) ex.complaint_title = "Service/Filter Change";
+        else if (/(dhuan|dhua|smoke|धुआं)/.test(lo)) ex.complaint_title = "Engine Smoke";
+        else if (/(garam|dhak|overheat|ubhal|tapta|ज्यादा गरम|ढक गई)/.test(lo)) ex.complaint_title = "Engine Overheating";
+        else if (/(tel nikal|oil leak|rissa|tel nikal ryo|तेल निकल|रिस)/.test(lo)) ex.complaint_title = "Oil Leakage";
+        else if (/(hydraulic|hydro|cylinder|bucket|boom|jack|हाइड्रोलिक)/.test(lo)) ex.complaint_title = "Hydraulic System Failure";
+        else if (/(race nahi|ras nahi|accelerator|रेस नहीं|gas nahi)/.test(lo)) ex.complaint_title = "Accelerator Problem";
+        else if (/(ac nahi|hawa nahi|thanda nahi|ac band|ठंडा नहीं)/.test(lo)) ex.complaint_title = "AC Not Working";
+        else if (/(brake nahi|brake nhi|rokti nahi|ब्रेक)/.test(lo)) ex.complaint_title = "Brake Failure";
+        else if (/(bijli nahi|headlight|bulb|electrical|लाइट)/.test(lo)) ex.complaint_title = "Electrical Problem";
+        else if (/(tire|tyre|pankchar|puncture|टायर)/.test(lo)) ex.complaint_title = "Tire Problem";
+        else if (/(khatakhat|khatak|thokta|awaaz aa rhi|aawaz|vibration|खटखट)/.test(lo)) ex.complaint_title = "Abnormal Noise";
+        else if (/(steering|स्टीयरिंग)/.test(lo)) ex.complaint_title = "Steering Problem";
+        else if (/(gear|transmission|गियर)/.test(lo)) ex.complaint_title = "Transmission Problem";
     }
 
-    return extracted;
+    return ex;
 }
 
-
-
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ✅ VALIDATE DATA
+   ✅ VALIDATE + SANITIZE
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
 function validateData(data) {
-    // job_location defaults to "Onsite" if still missing at submit time
-    // (most JCB machines are on-site; don't block submission for this)
     if (!data.job_location) data.job_location = "Onsite";
-
-    const required = ["machine_no", "complaint_title", "machine_status", "job_location", "city", "customer_phone"];
-    for (const f of required) {
-        if (!data[f] || data[f] === "NA" || data[f] === "Unknown") {
+    for (const f of ["machine_no", "complaint_title", "machine_status", "job_location", "city", "customer_phone"]) {
+        if (!data[f] || data[f] === "NA" || data[f] === "Unknown")
             return { valid: false, reason: `Missing ${f}` };
-        }
     }
-    if (!/^[6-9]\d{9}$/.test(data.customer_phone))
-        return { valid: false, reason: `Bad phone: ${data.customer_phone}` };
-    if (!/^\d{4,8}$/.test(data.machine_no))
-        return { valid: false, reason: `Bad machine: ${data.machine_no}` };
+    if (!/^[6-9]\d{9}$/.test(data.customer_phone)) return { valid: false, reason: "Bad phone" };
+    if (!/^\d{4,7}$/.test(data.machine_no)) return { valid: false, reason: "Bad machine" };
     return { valid: true };
 }
 
-/**
- * Called before building system prompt — clears any invalid values
- * that snuck in from earlier turns so the AI knows to re-ask.
- */
 export function sanitizeExtractedData(data) {
-    const clean = { ...data };
-    // Wipe invalid phone so it shows ❌ in status and AI re-asks
-    if (clean.customer_phone && !/^[6-9]\d{9}$/.test(clean.customer_phone)) {
-        console.warn(`⚠️  Wiping invalid phone: ${clean.customer_phone}`);
-        clean.customer_phone = null;
-    }
-    // Wipe invalid machine number
-    if (clean.machine_no && !/^\d{4,8}$/.test(clean.machine_no)) {
-        console.warn(`⚠️  Wiping invalid machine_no: ${clean.machine_no}`);
-        clean.machine_no = null;
-    }
-    return clean;
+    const c = { ...data };
+    if (c.customer_phone && !/^[6-9]\d{9}$/.test(c.customer_phone)) c.customer_phone = null;
+    if (c.machine_no && !/^\d{4,7}$/.test(c.machine_no)) c.machine_no = null;
+    return c;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    🗺️ MATCH SERVICE CENTER
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
 export function matchServiceCenter(cityText) {
-    if (!cityText || cityText.trim().length < 2) return null;
-    const input = cityText.trim().toUpperCase();
-
-    // Exact match (city or branch)
-    const exact = SERVICE_CENTERS.find(c => c.city_name === input || c.branch_name === input);
+    if (!cityText || cityText.length < 2) return null;
+    const inp = cityText.trim().toUpperCase();
+    const exact = SERVICE_CENTERS.find(c => c.city_name === inp || c.branch_name === inp);
     if (exact) return exact;
-
-    // Rajasthani / common phonetic variants
-    const phoneticMap = {
-        "JAYPUR": "JAIPUR", "JYPUR": "JAIPUR", "JAIPURR": "JAIPUR",
-        "JODHPURR": "JODHPUR",
-        "BIKANER": "BIKANER", "BYKANIR": "BIKANER",
-        "UDAI": "UDAIPUR", "ODAIPUR": "UDAIPUR",
-        "VKI": "VKIA", "VKIA ROAD": "VKIA",
-        "ABU": "ABU ROAD",
-        "SWARUP": "SWARUPGANJ",
-        "NEEM": "NEEM KA THANA",
-        "SONG": "TONK", "SONGASH": "TONK",
-        "MAVAL": "MAWAL",
-        "JHUNJ": "JHUNJHUNU",
-        "RAMGANJ": "RAMGANJMANDI",
-        "SAWAI": "SAWAI MADHOPUR",
-        "GANGANA": "GANGANAGAR",
-        "HANUMAN": "HANUMANGARH",
-        "CHITT": "CHITTORGARH",
-        "PRATAP": "PRATAPGARH",
-        "BANSWA": "BANSWARA",
-        "RAJSAM": "RAJSAMAND",
-        "NIMBA": "NIMBAHERA",
-        "KEKRI": "KEKRI",
-        "KARAUL": "KARAULI",
-        "KOTPUT": "KOTPUTLI",
-        "SUJAN": "SUJANGARH",
-        "DHOLP": "DHOLPUR",
-        "DUNGAR": "DUNGARPUR",
-        "JHALA": "JHALAWAR",
-        "BARME": "BARMER",
-        "JAISAL": "JAISALMER",
+    const PM = {
+        "JAYPUR": "JAIPUR", "JYPUR": "JAIPUR", "JODHPURR": "JODHPUR", "BYKANIR": "BIKANER",
+        "UDAI": "UDAIPUR", "ODAIPUR": "UDAIPUR", "VKI": "VKIA", "ABU": "ABU ROAD",
+        "SWARUP": "SWARUPGANJ", "NEEM": "NEEM KA THANA", "SONG": "TONK", "MAVAL": "MAWAL",
+        "JHUNJ": "JHUNJHUNU", "RAMGANJ": "RAMGANJMANDI", "SAWAI": "SAWAI MADHOPUR",
+        "GANGANA": "GANGANAGAR", "HANUMAN": "HANUMANGARH", "CHITT": "CHITTORGARH",
+        "PRATAP": "PRATAPGARH", "BANSWA": "BANSWARA", "RAJSAM": "RAJSAMAND",
+        "NIMBA": "NIMBAHERA", "KARAUL": "KARAULI", "KOTPUT": "KOTPUTLI",
+        "SUJAN": "SUJANGARH", "DHOLP": "DHOLPUR", "DUNGAR": "DUNGARPUR",
+        "JHALA": "JHALAWAR", "BARME": "BARMER", "JAISAL": "JAISALMER",
     };
-
-    for (const [wrong, correct] of Object.entries(phoneticMap)) {
-        if (input.includes(wrong)) {
-            return SERVICE_CENTERS.find(c => c.city_name === correct);
-        }
+    for (const [w, c] of Object.entries(PM)) {
+        if (inp.includes(w)) return SERVICE_CENTERS.find(sc => sc.city_name === c);
     }
-
-    // Prefix/fuzzy match (3 chars min)
-    if (input.length >= 3) {
-        const prefix3 = input.substring(0, 3);
-        const found = SERVICE_CENTERS.find(c =>
-            c.city_name.startsWith(prefix3) || prefix3.startsWith(c.city_name.substring(0, 3))
-        );
-        if (found) return found;
+    if (inp.length >= 3) {
+        const p3 = inp.slice(0, 3);
+        const f = SERVICE_CENTERS.find(c => c.city_name.startsWith(p3) || p3.startsWith(c.city_name.slice(0, 3)));
+        if (f) return f;
     }
-
     return null;
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   📊 LEGACY EXPORT
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
-export function extractAllData(text, currentData = {}) {
-    return extractWithRegex(text, currentData);
-}
-
+export function extractAllData(text, currentData = {}) { return extractWithRegex(text, currentData); }
 export default { getSmartAIResponse, extractAllData, matchServiceCenter, toSSML, toSSMLId };
