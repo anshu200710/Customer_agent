@@ -1,0 +1,105 @@
+# 📞 AI Agent Test Conversations (Only Dialogues)
+
+---
+
+## 🧪 TC-01
+
+Agent: Namaste ji, Rajesh Motors mein aapka swagat hai. Kya seva kar sakti hun?  
+User: Mujhe complaint register karni thi. Machine start nahi ho rahi.  
+Agent: Bilkul ji. Machine ka chassis number bataiye.  
+User: 3305447  
+Agent: Ji, ye number theek hai jisme last mein 59 aata hai?  
+User: Haan ji, sahi hai.  
+Agent: Aur shahar kaunsa hai ji?  
+User: Bhilwara  
+Agent: Complaint register ho gayi ji. Number hai 1234. Engineer jaldi aayega. Dhanyavaad!  
+
+---
+
+## 🧪 TC-02
+
+Agent: Namaste ji. Chassis number bataiye.  
+User: Machine number hai 3305 447.  
+Agent: Ji, ye number theek hai jisme last mein 59 aata hai?  
+User: Haan.  
+
+---
+
+## 🧪 TC-03
+
+Agent: Namaste ji. Chassis number bataiye.  
+User: Chassis number pata nahi mujhe.  
+Agent: Koi baat nahi ji. Ye number theek hai jisme last mein 47 aata hai?  
+User: Haan.  
+Agent: Kya problem hai machine mein ji?  
+
+---
+
+## 🧪 TC-04
+
+Agent: Namaste ji. Chassis number bataiye.  
+User: 9999111  
+Agent: Ye number nahi mila ji. Sahi chassis number bataiye.  
+User: 8888222  
+Agent: Ye bhi nahi mila ji. Ek baar aur check kijiye.  
+User: 7777333  
+Agent: Chassis nahi mila ji. Engineer ko bhej raha hun. Dhanyavaad!  
+
+---
+
+## 🧪 TC-05
+
+Agent: Namaste ji. Chassis number bataiye.  
+User: Meri machine band hai. Bhilwara. Number 9876543210.  
+Agent: Machine number nahi mila ji. Sahi chassis number bataiye.  
+
+---
+
+## 🧪 TC-06
+
+Agent: Kya problem hai machine mein ji?  
+User: Engine start nahi hoti, tel nikal raha hai, AC bhi kharab hai, brake bhi nahi lagta, aur badi awaaz aa rahi hai.  
+Agent: Ji, sab note kar liya. Shahar kaunsa hai?  
+
+---
+
+## 🧪 TC-07
+
+Agent: Kya problem hai machine mein ji?  
+User: Engine start nahi ho rahi.  
+Agent: Achha ji. Aur koi problem?  
+User: Haan, hydraulic bhi nahi chal raha. Gear bhi slip karta hai.  
+
+---
+
+## 🧪 TC-08
+
+Agent: Namaste ji. Chassis number bataiye.  
+User: Maine pehle complaint ki thi. Engineer abhi tak nahi aaya. 2 din ho gaye.  
+Agent: Ji, complaint SAP123 mili. Nayi complaint karein ya engineer ko urgent message bhejein?  
+User: Engineer ko urgent message bhejo.  
+Agent: Ji bilkul. Engineer ko urgent message bhej diya. Jaldi aayega. Dhanyavaad ji!  
+
+---
+
+## 🧪 TC-09
+
+Agent: Namaste ji. Chassis number bataiye.  
+User: 3305447  
+Agent: Ji, ye number theek hai jisme last mein 59 aata hai?  
+User: Nahi, galat number hai. Dusra dena hai.  
+Agent: Ji, naya number bata dijiye.  
+User: 9876543210  
+
+---
+
+## 🧪 TC-10
+
+Agent: Machine ka chassis number bataiye.  
+User: Ek minute, dhundh raha hun.  
+Agent: Ji zarur.  
+User: Haan, 3305447 hai.  
+
+---
+
+# ✅ End of Conversations
