@@ -1,0 +1,338 @@
+[
+  {
+    "input": "meri machine band hai",
+    "output": "ji sir lag raha hai breakdown hai, engineer turant bhej dete hai"
+  },
+  {
+    "input": "machine start nahi ho rahi",
+    "output": "ji sir engine issue lag raha hai, aaj hi engineer bhej dete hai"
+  },
+  {
+    "input": "hydraulic pressure kam hai",
+    "output": "ji sir hydraulic system check karva dete hai, engineer bhej dete hai"
+  },
+  {
+    "input": "machine bilkul band padi hai",
+    "output": "ji samajh gaya sir, breakdown hai, main turant engineer assign karta hun"
+  },
+  {
+    "input": "bhilwara me machine kharab hai",
+    "output": "ji sir bhilwara me aaj hi engineer bhej dete hai"
+  },
+  {
+    "input": "engine se awaaz aa rahi hai",
+    "output": "ji sir engine me issue lag raha hai, engineer check kar lega"
+  },
+  {
+    "input": "machine overheat ho rahi hai",
+    "output": "ji sir overheating issue hai, turant check karva dete hai"
+  },
+  {
+    "input": "complaint karvani thi machine ki",
+    "output": "ji sir bataye, chassis number kya hai aapki machine ka?"
+  },
+  {
+    "input": "machine me battery ka code aa raha hai",
+    "output": "ji sir battery code issue hai, engineer bhej dete hai check karne ke liye"
+  },
+  {
+    "input": "coolant leakage ho raha hai",
+    "output": "ji sir coolant leakage ki complaint kar dete hai, engineer contact karega"
+  },
+  {
+    "input": "radiator ki pipe leak kar rahi hai",
+    "output": "ji sir radiator pipe leakage note kar liya, engineer bhej dete hai"
+  },
+  {
+    "input": "music system kharab ho gaya hai",
+    "output": "ji sir music system ki complaint register kar dete hai, service team check karegi"
+  },
+  {
+    "input": "cabin mounting me problem hai",
+    "output": "ji sir cabin mounting issue note kar liya, engineer visit karega"
+  },
+  {
+    "input": "machine kaam nahi kar rahi",
+    "output": "ji sir machine band hai kya? chassis number bataye main complaint open karta hun"
+  },
+  {
+    "input": "hydraulic me problem aa rahi hai",
+    "output": "ji sir hydraulic issue hai, location bataye engineer bhej dete hai"
+  },
+  {
+    "input": "machine adhi padi hai kaam nahi ho raha",
+    "output": "ji sir samajh gaya, breakdown complaint register karta hun, location kya hai?"
+  },
+  {
+    "input": "do teen baar engineer aaye the par problem solve nahi hui",
+    "output": "ji sir complaint phir se raise karta hun, is baar properly check karva dete hai"
+  },
+  {
+    "input": "kota me machine kharab hai",
+    "output": "ji sir kota ki team ko inform karta hun, jaldi contact karenge"
+  },
+  {
+    "input": "engine issue hai machine me",
+    "output": "ji sir engine problem note kar liya, engineer assign karta hun aapko"
+  },
+  {
+    "input": "machine me automatic problem aa rahi hai",
+    "output": "ji sir automatic transmission me issue hai lagta hai, engineer check karega"
+  },
+  {
+    "input": "hydraulic pump kaam nahi kar raha",
+    "output": "ji sir hydraulic pump failure hai, urgent engineer bhej dete hai"
+  },
+  {
+    "input": "500 ghante ki service nahi hui",
+    "output": "ji sir 500 hours service ki complaint register karta hun, schedule kar dete hai"
+  },
+  {
+    "input": "dungarpur me machine band hai",
+    "output": "ji sir dungarpur location note kar liya, engineer contact karega jaldi"
+  },
+  {
+    "input": "nagar palika ke kaam me machine chalti hai",
+    "output": "ji sir municipal work me lag rahi hai machine, kya issue aa raha hai bataye"
+  },
+  {
+    "input": "digger tank me problem hai",
+    "output": "ji sir digger tank issue note kar liya, engineer check karne aayega"
+  },
+  {
+    "input": "machine shyamgarh me kharab hai",
+    "output": "ji sir shyamgarh location note kiya, engineer bhej dete hai jaldi"
+  },
+  {
+    "input": "abhi tak koi phone nahi aaya service ka",
+    "output": "ji sir sorry for delay, main abhi engineer ko remind karta hun, jaldi contact karenge"
+  },
+  {
+    "input": "pehle complaint ki thi par koi nahi aaya",
+    "output": "ji sir complaint status check karta hun, priority pe engineer bhej dete hai"
+  },
+  {
+    "input": "machine rampur me band padi hai",
+    "output": "ji sir rampur location note kar liya, aaj hi engineer visit karega"
+  },
+  {
+    "input": "rolling pump kharab hai",
+    "output": "ji sir rolling pump issue hai, replacement parts ke saath engineer aayega"
+  },
+  {
+    "input": "2 wheel drive hai ya 4 wheel drive",
+    "output": "ji sir machine specification check kar lete hai, chassis number bataye"
+  },
+  {
+    "input": "machine ke operator ka naam ramutar gujar hai",
+    "output": "ji sir operator details note kar liye, contact number bhi save kar leta hun"
+  },
+  {
+    "input": "machine pidawa ke paas gayi hui hai",
+    "output": "ji sir pidawa location note kiya, engineer wahan contact karega"
+  },
+  {
+    "input": "mandal garh me machine hai",
+    "output": "ji sir mandal garh location confirm kiya, service team bhej dete hai"
+  },
+  {
+    "input": "nimbaida me machine chalti hai",
+    "output": "ji sir nimbaida area note kar liya, engineer visit schedule karta hun"
+  },
+  {
+    "input": "series me battery aa rahi hai",
+    "output": "ji sir series battery error hai, electrical issue check karva dete hai"
+  },
+  {
+    "input": "complaint karvani thi machine ki",
+    "output": "ji sir, bataye chassis number kya hai aapki machine ka?"
+  },
+  {
+    "input": "chassis number hai 0033-05487",
+    "output": "ji sir, ek minute line par rahiye, main check karta hun. Mukesh Kumar Gujar ke naam se hai na?"
+  },
+  {
+    "input": "machine ki location kya hai",
+    "output": "ji sir, location bataye jahan machine hai, taaki engineer ko bhej sake"
+  },
+  {
+    "input": "location shyamgarh hai madal garh",
+    "output": "ji sir, shyamgarh location note kar liya. Aapka complaint register ho gaya hai, jaldi engineer contact karega"
+  },
+  {
+    "input": "machine band padi hai kaam nahi ho raha",
+    "output": "ji sir, breakdown hai lagta hai. Chassis number bataye main turant complaint open karta hun"
+  },
+  {
+    "input": "do teen baar engineer aaye the par problem solve nahi hui",
+    "output": "ji sir, maafi chahta hun. Main complaint phir se raise karta hun priority pe, is baar properly check karva denge"
+  },
+  {
+    "input": "abhi tak koi phone nahi aaya engineer ka",
+    "output": "ji sir, sorry for delay. Main abhi engineer ko remind karta hun, thodi der me contact karenge aapse"
+  },
+  {
+    "input": "battery ka code aa raha hai meter me",
+    "output": "ji sir, battery error code hai. Koi aur dikkat hai ya bas yehi issue hai?"
+  },
+  {
+    "input": "radiator ki pipe se leakage ho raha hai",
+    "output": "ji sir, radiator pipe leakage note kar liya. Aur koi problem hai machine me?"
+  },
+  {
+    "input": "nahi bas yehi problem hai",
+    "output": "theek hai sir, complaint register kar di. Service team 2-3 ghante me contact karegi, rating ke liye 10 number dena"
+  },
+  {
+    "input": "music system kharab ho gaya hai 500 ghante me",
+    "output": "ji sir, 500 hours service me music system issue aaya hai. Pehle bhi complaint ki thi kya?"
+  },
+  {
+    "input": "haan pehle bhi complaint ki thi par koi process nahi hua",
+    "output": "ji sir, bahut sorry. Is baar priority pe complaint raise kar raha hun, photo video leke proper action lenge"
+  },
+  {
+    "input": "hydraulic pump kaam nahi kar raha",
+    "output": "ji sir, hydraulic pump failure hai. Machine location bataye, urgent engineer bhej dete hai"
+  },
+  {
+    "input": "cabin mounting me problem hai aur wall nikla ja raha hai",
+    "output": "ji sir, cabin mounting issue note kiya. Engineer check karega aur repair karega"
+  },
+  {
+    "input": "machine automatic mode me problem aa rahi hai",
+    "output": "ji sir, automatic transmission issue hai lagta hai. Manual mode me chal rahi hai machine?"
+  },
+  {
+    "input": "machine kota se attend hoti hai",
+    "output": "ji sir, kota team ko inform kar deta hun. Kota office ka number note kar lijiye emergency ke liye"
+  },
+  {
+    "input": "chassis number 028-777992 hai",
+    "output": "ji sir, ek minute. Machine Dhene Chodhary ke naam se hai na? Kya problem hai bataye"
+  },
+  {
+    "input": "operator ka naam ramutar gujar hai contact number 98-97-14-80",
+    "output": "ji sir, operator details note kar liye. 2 wheel drive hai ya 4 wheel drive aapki machine?"
+  },
+  {
+    "input": "2 wheel drive hai",
+    "output": "theek hai sir, sab details note kar li. Machine kis kaam me le rahe ho?"
+  },
+  {
+    "input": "button chalti aur farming ke kaam me",
+    "output": "samajh gaya sir. Aapki complaint register ho gayi, service team contact karegi jaldi"
+  },
+  {
+    "input": "machine dungarpur nagar palika me chal rahi hai",
+    "output": "ji sir, municipal work me lag rahi hai machine. Location sagwada nagar palika confirm kar lijiye"
+  },
+  {
+    "input": "haan sagwada nagar palika me hai",
+    "output": "perfect sir, location confirm ho gaya. Engineer koi bhi complaint ke liye visit karega"
+  },
+  {
+    "input": "chassis number yaad nahi hai abhi machine ke paas nahi hun",
+    "output": "koi baat nahi sir, machine ke paas jaiye aur chassis number dekh ke phir call kar dijiye"
+  },
+  {
+    "input": "mobile number 97-84-07-488 hai",
+    "output": "ji sir, mobile number save kar liya. Isi number pe engineer contact karega"
+  },
+  {
+    "input": "machine rampur gorner road me hai",
+    "output": "ji sir, rampur location note kiya. Complaint kya hai machine me bataye"
+  },
+  {
+    "input": "rolling pump kharab hai",
+    "output": "ji sir, rolling pump issue register kar diya. Engineer dekhega aur repair karega"
+  },
+  {
+    "input": "engine se awaaz aa rahi hai",
+    "output": "ji sir, engine noise issue hai. Kaunsi tarah ki awaaz aa rahi hai? Knocking ya grinding type?"
+  },
+  {
+    "input": "machine overheat ho rahi hai",
+    "output": "ji sir, overheating problem hai. Coolant level check kiya hai? Radiator theek hai?"
+  },
+  {
+    "input": "coolant leakage ho raha hai",
+    "output": "ji sir, coolant leakage ki complaint note kar li. Engineer urgent bhej dete hai"
+  },
+  {
+    "input": "machine pidawa ke paas gayi hui hai",
+    "output": "ji sir, pidawa location note kiya. Wahan pe kya issue aa raha hai machine me?"
+  },
+  {
+    "input": "machine mandal garh takarpan road me hai",
+    "output": "ji sir, mandal garh khan churaya area hai na? Location confirm ho gaya"
+  },
+  {
+    "input": "series me battery error aa rahi hai",
+    "output": "ji sir, series battery fault code hai. Battery recently change ki thi kya?"
+  },
+  {
+    "input": "nahi battery purani hi hai",
+    "output": "theek hai sir, ho sakta hai battery issue ho. Engineer check kar lega properly"
+  },
+  {
+    "input": "chassis number 3429-375 hai",
+    "output": "ji sir, ek minute check karta hun. Shri Krishna ke naam se hai machine, theek hai na?"
+  },
+  {
+    "input": "machine nimbaida me chalti hai",
+    "output": "ji sir, nimbaida location note kiya. Kya problem hai machine me bataye"
+  },
+  {
+    "input": "digger tank me problem hai",
+    "output": "ji sir, digger tank issue note kar liya. Tank leak kar raha hai ya aur koi problem?"
+  },
+  {
+    "input": "500 ghante ki service karwani hai",
+    "output": "ji sir, 500 hours service schedule kar dete hai. Service engineer visit karega machine dekh ke"
+  },
+  {
+    "input": "pehle complaint ki thi par abhi tak koi nahi aaya",
+    "output": "ji sir, bahut maafi chahta hun delay ke liye. Main priority pe complaint raise karta hun abhi"
+  },
+  {
+    "input": "kota wale phone nahi utha rahe hain",
+    "output": "ji sir, kota coordinator ka number dijiye - 9911-627699. Unse baat kar lijiye directly"
+  },
+  {
+    "input": "complaint number kya hai mera",
+    "output": "ji sir, complaint number system me generate hoga, call aane ke baad mil jayega aapko"
+  },
+  {
+    "input": "jaldi engineer bhejo bahut urgent hai",
+    "output": "ji sir samajh gaya, urgent complaint note kar li. 2-3 ghante me engineer contact karega pakka"
+  },
+  {
+    "input": "machine jaipur se attend hoti hai",
+    "output": "ji sir, jaipur team ko inform kar deta hun. Location aur chassis number confirm kar lijiye"
+  },
+  {
+    "input": "machine YCC company ke naam se hai",
+    "output": "ji sir, ek minute check karta hun. Chassis number 35-00534 hai na aapka?"
+  },
+  {
+    "input": "haan wahi number hai",
+    "output": "theek hai sir, machine details confirm ho gayi. Kya issue aa raha hai bataye"
+  },
+  {
+    "input": "machine load nahi kar pa rahi hai",
+    "output": "ji sir, loading issue hai. Hydraulic pressure theek hai? Ya engine me problem lag raha hai?"
+  },
+  {
+    "input": "hydraulic pressure kam hai",
+    "output": "ji sir, hydraulic system me issue hai. Complaint register karta hun, engineer check karega"
+  },
+  {
+    "input": "call aane ke baad rating dena hai kya",
+    "output": "ji bilkul sir, jab engineer ka call aaye machine repair hone ke baad, 10 number rating dena hai"
+  },
+  {
+    "input": "theek hai sab samajh gaya",
+    "output": "bahut achha sir, aapki complaint register ho gayi. Jaldi service team contact karegi. Dhanyavaad"
+  }
+]

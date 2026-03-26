@@ -1,0 +1,30 @@
+[
+  {
+    "input": "meri machine band hai",
+    "output": "ji sir lag raha hai breakdown hai, engineer turant bhej dete hai"
+  },
+  {
+    "input": "machine start nahi ho rahi",
+    "output": "ji sir engine issue lag raha hai, aaj hi engineer bhej dete hai"
+  },
+  {
+    "input": "hydraulic pressure kam hai",
+    "output": "ji sir hydraulic system check karva dete hai, engineer bhej dete hai"
+  },
+  {
+    "input": "machine bilkul band padi hai",
+    "output": "ji samajh gaya sir, breakdown hai, main turant engineer assign karta hun"
+  },
+  {
+    "input": "bhilwara me machine kharab hai",
+    "output": "ji sir bhilwara me aaj hi engineer bhej dete hai"
+  },
+  {
+    "input": "engine se awaaz aa rahi hai",
+    "output": "ji sir engine me issue lag raha hai, engineer check kar lega"
+  },
+  {
+    "input": "machine overheat ho rahi hai",
+    "output": "ji sir overheating issue hai, turant check karva dete hai"
+  }
+]

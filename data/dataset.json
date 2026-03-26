@@ -1,0 +1,418 @@
+[
+  {
+    "input": "meri machine band hai",
+    "output": "ji sir lag raha hai breakdown hai, engineer turant bhej dete hai"
+  },
+  {
+    "input": "machine start nahi ho rahi",
+    "output": "ji sir engine issue lag raha hai, aaj hi engineer bhej dete hai"
+  },
+  {
+    "input": "hydraulic pressure kam hai",
+    "output": "ji sir hydraulic system check karva dete hai, engineer bhej dete hai"
+  },
+  {
+    "input": "machine bilkul band padi hai",
+    "output": "ji samajh gaya sir, breakdown hai, main turant engineer assign karta hun"
+  },
+  {
+    "input": "bhilwara me machine kharab hai",
+    "output": "ji sir bhilwara me aaj hi engineer bhej dete hai"
+  },
+  {
+    "input": "engine se awaaz aa rahi hai",
+    "output": "ji sir engine me issue lag raha hai, engineer check kar lega"
+  },
+  {
+    "input": "machine overheat ho rahi hai",
+    "output": "ji sir overheating issue hai, turant check karva dete hai"
+  },
+  {
+    "input": "complaint karvani thi machine ki",
+    "output": "ji sir bataye, chassis number kya hai aapki machine ka?"
+  },
+  {
+    "input": "machine me battery ka code aa raha hai",
+    "output": "ji sir battery code issue hai, engineer bhej dete hai check karne ke liye"
+  },
+  {
+    "input": "coolant leakage ho raha hai",
+    "output": "ji sir coolant leakage ki complaint kar dete hai, engineer contact karega"
+  },
+  {
+    "input": "radiator ki pipe leak kar rahi hai",
+    "output": "ji sir radiator pipe leakage note kar liya, engineer bhej dete hai"
+  },
+  {
+    "input": "music system kharab ho gaya hai",
+    "output": "ji sir music system ki complaint register kar dete hai, service team check karegi"
+  },
+  {
+    "input": "cabin mounting me problem hai",
+    "output": "ji sir cabin mounting issue note kar liya, engineer visit karega"
+  },
+  {
+    "input": "machine kaam nahi kar rahi",
+    "output": "ji sir machine band hai kya? chassis number bataye main complaint open karta hun"
+  },
+  {
+    "input": "hydraulic me problem aa rahi hai",
+    "output": "ji sir hydraulic issue hai, location bataye engineer bhej dete hai"
+  },
+  {
+    "input": "machine adhi padi hai kaam nahi ho raha",
+    "output": "ji sir samajh gaya, breakdown complaint register karta hun, location kya hai?"
+  },
+  {
+    "input": "do teen baar engineer aaye the par problem solve nahi hui",
+    "output": "ji sir complaint phir se raise karta hun, is baar properly check karva dete hai"
+  },
+  {
+    "input": "kota me machine kharab hai",
+    "output": "ji sir kota ki team ko inform karta hun, jaldi contact karenge"
+  },
+  {
+    "input": "engine issue hai machine me",
+    "output": "ji sir engine problem note kar liya, engineer assign karta hun aapko"
+  },
+  {
+    "input": "machine me automatic problem aa rahi hai",
+    "output": "ji sir automatic transmission me issue hai lagta hai, engineer check karega"
+  },
+  {
+    "input": "hydraulic pump kaam nahi kar raha",
+    "output": "ji sir hydraulic pump failure hai, urgent engineer bhej dete hai"
+  },
+  {
+    "input": "500 ghante ki service nahi hui",
+    "output": "ji sir 500 hours service ki complaint register karta hun, schedule kar dete hai"
+  },
+  {
+    "input": "dungarpur me machine band hai",
+    "output": "ji sir dungarpur location note kar liya, engineer contact karega jaldi"
+  },
+  {
+    "input": "nagar palika ke kaam me machine chalti hai",
+    "output": "ji sir municipal work me lag rahi hai machine, kya issue aa raha hai bataye"
+  },
+  {
+    "input": "digger tank me problem hai",
+    "output": "ji sir digger tank issue note kar liya, engineer check karne aayega"
+  },
+  {
+    "input": "machine shyamgarh me kharab hai",
+    "output": "ji sir shyamgarh location note kiya, engineer bhej dete hai jaldi"
+  },
+  {
+    "input": "abhi tak koi phone nahi aaya service ka",
+    "output": "ji sir sorry for delay, main abhi engineer ko remind karta hun, jaldi contact karenge"
+  },
+  {
+    "input": "pehle complaint ki thi par koi nahi aaya",
+    "output": "ji sir complaint status check karta hun, priority pe engineer bhej dete hai"
+  },
+  {
+    "input": "machine rampur me band padi hai",
+    "output": "ji sir rampur location note kar liya, aaj hi engineer visit karega"
+  },
+  {
+    "input": "rolling pump kharab hai",
+    "output": "ji sir rolling pump issue hai, replacement parts ke saath engineer aayega"
+  },
+  {
+    "input": "2 wheel drive hai ya 4 wheel drive",
+    "output": "ji sir machine specification check kar lete hai, chassis number bataye"
+  },
+  {
+    "input": "machine ke operator ka naam ramutar gujar hai",
+    "output": "ji sir operator details note kar liye, contact number bhi save kar leta hun"
+  },
+  {
+    "input": "machine pidawa ke paas gayi hui hai",
+    "output": "ji sir pidawa location note kiya, engineer wahan contact karega"
+  },
+  {
+    "input": "mandal garh me machine hai",
+    "output": "ji sir mandal garh location confirm kiya, service team bhej dete hai"
+  },
+  {
+    "input": "nimbaida me machine chalti hai",
+    "output": "ji sir nimbaida area note kar liya, engineer visit schedule karta hun"
+  },
+  {
+    "input": "series me battery aa rahi hai",
+    "output": "ji sir series battery error hai, electrical issue check karva dete hai"
+  },
+  {
+    "input": "complaint karvani thi machine ki",
+    "output": "ji sir, bataye chassis number kya hai aapki machine ka?"
+  },
+  {
+    "input": "chassis number hai 0033-05487",
+    "output": "ji sir, ek minute line par rahiye, main check karta hun. Mukesh Kumar Gujar ke naam se hai na?"
+  },
+  {
+    "input": "machine ki location kya hai",
+    "output": "ji sir, location bataye jahan machine hai, taaki engineer ko bhej sake"
+  },
+  {
+    "input": "location shyamgarh hai madal garh",
+    "output": "ji sir, shyamgarh location note kar liya. Aapka complaint register ho gaya hai, jaldi engineer contact karega"
+  },
+  {
+    "input": "machine band padi hai kaam nahi ho raha",
+    "output": "ji sir, breakdown hai lagta hai. Chassis number bataye main turant complaint open karta hun"
+  },
+  {
+    "input": "do teen baar engineer aaye the par problem solve nahi hui",
+    "output": "ji sir, maafi chahta hun. Main complaint phir se raise karta hun priority pe, is baar properly check karva denge"
+  },
+  {
+    "input": "abhi tak koi phone nahi aaya engineer ka",
+    "output": "ji sir, sorry for delay. Main abhi engineer ko remind karta hun, thodi der me contact karenge aapse"
+  },
+  {
+    "input": "battery ka code aa raha hai meter me",
+    "output": "ji sir, battery error code hai. Koi aur dikkat hai ya bas yehi issue hai?"
+  },
+  {
+    "input": "radiator ki pipe se leakage ho raha hai",
+    "output": "ji sir, radiator pipe leakage note kar liya. Aur koi problem hai machine me?"
+  },
+  {
+    "input": "nahi bas yehi problem hai",
+    "output": "theek hai sir, complaint register kar di. Service team 2-3 ghante me contact karegi, rating ke liye 10 number dena"
+  },
+  {
+    "input": "music system kharab ho gaya hai 500 ghante me",
+    "output": "ji sir, 500 hours service me music system issue aaya hai. Pehle bhi complaint ki thi kya?"
+  },
+  {
+    "input": "haan pehle bhi complaint ki thi par koi process nahi hua",
+    "output": "ji sir, bahut sorry. Is baar priority pe complaint raise kar raha hun, photo video leke proper action lenge"
+  },
+  {
+    "input": "hydraulic pump kaam nahi kar raha",
+    "output": "ji sir, hydraulic pump failure hai. Machine location bataye, urgent engineer bhej dete hai"
+  },
+  {
+    "input": "cabin mounting me problem hai aur wall nikla ja raha hai",
+    "output": "ji sir, cabin mounting issue note kiya. Engineer check karega aur repair karega"
+  },
+  {
+    "input": "machine automatic mode me problem aa rahi hai",
+    "output": "ji sir, automatic transmission issue hai lagta hai. Manual mode me chal rahi hai machine?"
+  },
+  {
+    "input": "machine kota se attend hoti hai",
+    "output": "ji sir, kota team ko inform kar deta hun. Kota office ka number note kar lijiye emergency ke liye"
+  },
+  {
+    "input": "chassis number 028-777992 hai",
+    "output": "ji sir, ek minute. Machine Dhene Chodhary ke naam se hai na? Kya problem hai bataye"
+  },
+  {
+    "input": "operator ka naam ramutar gujar hai contact number 98-97-14-80",
+    "output": "ji sir, operator details note kar liye. 2 wheel drive hai ya 4 wheel drive aapki machine?"
+  },
+  {
+    "input": "2 wheel drive hai",
+    "output": "theek hai sir, sab details note kar li. Machine kis kaam me le rahe ho?"
+  },
+  {
+    "input": "button chalti aur farming ke kaam me",
+    "output": "samajh gaya sir. Aapki complaint register ho gayi, service team contact karegi jaldi"
+  },
+  {
+    "input": "machine dungarpur nagar palika me chal rahi hai",
+    "output": "ji sir, municipal work me lag rahi hai machine. Location sagwada nagar palika confirm kar lijiye"
+  },
+  {
+    "input": "haan sagwada nagar palika me hai",
+    "output": "perfect sir, location confirm ho gaya. Engineer koi bhi complaint ke liye visit karega"
+  },
+  {
+    "input": "chassis number yaad nahi hai abhi machine ke paas nahi hun",
+    "output": "koi baat nahi sir, machine ke paas jaiye aur chassis number dekh ke phir call kar dijiye"
+  },
+  {
+    "input": "mobile number 97-84-07-488 hai",
+    "output": "ji sir, mobile number save kar liya. Isi number pe engineer contact karega"
+  },
+  {
+    "input": "machine rampur gorner road me hai",
+    "output": "ji sir, rampur location note kiya. Complaint kya hai machine me bataye"
+  },
+  {
+    "input": "rolling pump kharab hai",
+    "output": "ji sir, rolling pump issue register kar diya. Engineer dekhega aur repair karega"
+  },
+  {
+    "input": "engine se awaaz aa rahi hai",
+    "output": "ji sir, engine noise issue hai. Kaunsi tarah ki awaaz aa rahi hai? Knocking ya grinding type?"
+  },
+  {
+    "input": "machine overheat ho rahi hai",
+    "output": "ji sir, overheating problem hai. Coolant level check kiya hai? Radiator theek hai?"
+  },
+  {
+    "input": "coolant leakage ho raha hai",
+    "output": "ji sir, coolant leakage ki complaint note kar li. Engineer urgent bhej dete hai"
+  },
+  {
+    "input": "machine pidawa ke paas gayi hui hai",
+    "output": "ji sir, pidawa location note kiya. Wahan pe kya issue aa raha hai machine me?"
+  },
+  {
+    "input": "machine mandal garh takarpan road me hai",
+    "output": "ji sir, mandal garh khan churaya area hai na? Location confirm ho gaya"
+  },
+  {
+    "input": "series me battery error aa rahi hai",
+    "output": "ji sir, series battery fault code hai. Battery recently change ki thi kya?"
+  },
+  {
+    "input": "nahi battery purani hi hai",
+    "output": "theek hai sir, ho sakta hai battery issue ho. Engineer check kar lega properly"
+  },
+  {
+    "input": "chassis number 3429-375 hai",
+    "output": "ji sir, ek minute check karta hun. Shri Krishna ke naam se hai machine, theek hai na?"
+  },
+  {
+    "input": "machine nimbaida me chalti hai",
+    "output": "ji sir, nimbaida location note kiya. Kya problem hai machine me bataye"
+  },
+  {
+    "input": "digger tank me problem hai",
+    "output": "ji sir, digger tank issue note kar liya. Tank leak kar raha hai ya aur koi problem?"
+  },
+  {
+    "input": "500 ghante ki service karwani hai",
+    "output": "ji sir, 500 hours service schedule kar dete hai. Service engineer visit karega machine dekh ke"
+  },
+  {
+    "input": "pehle complaint ki thi par abhi tak koi nahi aaya",
+    "output": "ji sir, bahut maafi chahta hun delay ke liye. Main priority pe complaint raise karta hun abhi"
+  },
+  {
+    "input": "kota wale phone nahi utha rahe hain",
+    "output": "ji sir, kota coordinator ka number dijiye - 9911-627699. Unse baat kar lijiye directly"
+  },
+  {
+    "input": "complaint number kya hai mera",
+    "output": "ji sir, complaint number system me generate hoga, call aane ke baad mil jayega aapko"
+  },
+  {
+    "input": "jaldi engineer bhejo bahut urgent hai",
+    "output": "ji sir samajh gaya, urgent complaint note kar li. 2-3 ghante me engineer contact karega pakka"
+  },
+  {
+    "input": "machine jaipur se attend hoti hai",
+    "output": "ji sir, jaipur team ko inform kar deta hun. Location aur chassis number confirm kar lijiye"
+  },
+  {
+    "input": "machine YCC company ke naam se hai",
+    "output": "ji sir, ek minute check karta hun. Chassis number 35-00534 hai na aapka?"
+  },
+  {
+    "input": "haan wahi number hai",
+    "output": "theek hai sir, machine details confirm ho gayi. Kya issue aa raha hai bataye"
+  },
+  {
+    "input": "machine load nahi kar pa rahi hai",
+    "output": "ji sir, loading issue hai. Hydraulic pressure theek hai? Ya engine me problem lag raha hai?"
+  },
+  {
+    "input": "hydraulic pressure kam hai",
+    "output": "ji sir, hydraulic system me issue hai. Complaint register karta hun, engineer check karega"
+  },
+  {
+    "input": "call aane ke baad rating dena hai kya",
+    "output": "ji bilkul sir, jab engineer ka call aaye machine repair hone ke baad, 10 number rating dena hai"
+  },
+  {
+    "input": "theek hai sab samajh gaya",
+    "output": "bahut achha sir, aapki complaint register ho gayi. Jaldi service team contact karegi. Dhanyavaad"
+  },
+  {
+    "file": "02--A-919358065499---20260323150424-Unknown.wav",
+    "transcript": "आदम ये लिगवा आप जीरो आजी मैं आप रो मुकेश की कमप्लील टिकानी आच मैस्टीं जी आगे भी ची नहीं हो रहें चटीस नमबर ता एशर चटीस नमबर आप जीरो जीरो चटीस चटीस जीरो पाज पाज अद पाडी साथ अद ठालीस शाथ वुकेश कुमार गुजर इवा रेटन बता एई चीची चीची नमबर दिबर अब दोू आद जीरो खेंपीश जीरो पाज यार आट साथ वुकेश कुमार गुजर आट्याज वुकेश कुमार गुजर की नाम से ना? आट्याज जीरो नाइन से वन वाले कुम्टेक नमबर अना आववईवईई वुकेशन की लोकेशन क्या? लोकेशन दो याई पे बते पे लोकेशन बताएई सर लोकेशन दो याई मरदन गाँ वह ना मेरे गाँँँँ अलो सर ये किस शरफस काम लिए रहा रहा अप मशाईन को ये बतें क्लती साब तएके सर अपना की कमपलनेड अगी है मरे सरभिष्टीम जलती आप से खुड़े करी थी मचीना काम चुड़े की रहा अगी वह देखे वेगा ञीगे सो, डीनीवार"
+  },
+  {
+    "file": "02--A-919664406751---20260323110210-Unknown.wav",
+    "transcript": "انمار نہیں ہے اس میں انماریں سنیلی اونیوٹ آرے آل لائن پرئیہ"
+  },
+  {
+    "file": "03--A-916350159950---20250701121454-Unknown.wav",
+    "transcript": "अलो. अलो. नुबस्काभतिजी। खए कंप्मेर में करनी ती乖। पतावजोँ ची नमरॉ तीरो।, सक्तो ब fırकुएद जग कंप्सदे। थबल सेवन। । बलुN करुथ शॉक्आदू� light शॉค्आदु। ज़िस्ब्ति नंब्र भबबबाबबी ती रख रीग तो खॉनबा रहे थे ते रव वसर मी गरबफॉट. आभी खेद दिख़ा दिए. औसर रेज देर है ना तो रेच अप्षनाब वबी खम वेद थी और. रेज फूर. और यह रेज भी माण दे जा से. अ ktoś करatge पट्मॉःंऍे नयनगा भूर्थीं glitter योंके नहीं द्नोजव happiness कोबicle आफibi ़िएMIN डिनॉधिल One � fazha ळंदुद़नें Kash तहींत् म मुँष्एश है। योंस όातalnya लियाடमॉंता थी पूछ दम्या expanding और थे परब लेचύ त nightmares बाहिन �下次 रेभजर पर वेई, रेजबी तर बावाव? थèle en которое v sets स़र पिष, � many extend सढद क委chemistry सहए atE ख्राम, ख्राम, ख्राम, ख्राम, ख्राम... टादी हो Indari घल शिए प्याण, पन mike इर्ए व़्क, उच्राम, भी। the पब चाम, इर्ठी थी आप देब, उच्राम,"
+  },
+  {
+    "file": "03--A-916377117816---20250704105328-Unknown.wav",
+    "transcript": "ु पाम दिन्हात थु भी यूआम जान longer । । । । । । । । । । पीः बार शात सा चो आद पाचा वैद जोब लेए आ चान चूरग। । । । । । । । पीः अत्दा आप अद का है। । । पीः यो त। लगा जी प्र क्तिख़ कट़ी सरे बेट्री कność हीहा रल भे आप बेटरी प्नgeldeb��.. भातम के लोगला off"
+  },
+  {
+    "file": "03--A-916377224969---20250701113128-Unknown.wav",
+    "transcript": "ہلو ہلو مجھیکوڈ جی سر میں دولسرام بٹل گولناو بولی سر سر میں کال کے راڈین مشین خراد ہے چیابل خراد ہے سریز باڑی ہے چیز دا بتا ہوں سر سریڈ جیو سریڈ جیرو دبل سریڈ جیرو دبل سریڈ جیرو دبل سریڈ جیرو دبل سریڈ جیرو ایک ملائنٹ لائن پر یہ چیک رہو دولسرام بٹل دو تنام بٹلیک ناپس نہیں ہے دیوگل سریز کی اور کگ میяют con mapped締 کی سے پید ہے سریڈر گبر ٹھا آار مانڈان comments ہے پید ہے اس بات میں بول نک cogلرا ہے اب do ہوتئن نہیں ہوئی آپی آ Shoot بیڑتر کھانا حیدے بات کلشتا ہوں بالا کام کوئی نیزسمی دو کند 4 کملے تو笈 لطوی کوئی بات نہیں ہے اسی اپنے کو یہ ہے آول نیکل رہا ہے نا تو آول بات کال رہا ہے ثبیہ میں کیا کرو حیدے بات کلشتا ہوں آجا بھی بات کرو ابنی کو پون کرو another"
+  },
+  {
+    "file": "03--A-917568614556---20250701111635-Unknown.wav",
+    "transcript": "तpea ne bhiye. अज़ा़। पाड़ो? नमसखाज़। नमसखाज़⌕ू, स्वःज़। बड़ए। थब स्वोँन्त्वानी दी। वह आँ। प्रषकचिर कतूर। थब स्वोँएद नाँन तब स्वोणुवाइ भुओऊँँँँँँँ। बबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबबब� अप आप अग़ मोडन मद्री जी 9784 9784 07 07 पाई पेज पाई पेज लोकेष्ट माशिन की? माशिन की लोकेष गल्बानी विलानी इरे से तो लेएके न आभी वीनी कलए में थे, एक लेवा के लेवा विलानी आवा ना कह जासे आई हैंके जी home उजी मैं जुई नो से आप यहने सरू कुंपर में पताए है तम्कलेंट असर एक तो ट्राल्ष मिःसंगी सरूभिस करवानी है टेक आर और सर खोलेंट वगे रा वो लिकेज आतोडा थोडासा खोलेंट लिकेज जी प्रुबलूम है, सरे टेक और तराज्च मिशन्गी बत्यार ये एक सर्वीष पोटार एक रहा है थी कि से दाल दिए मोडिए दो दिए नी सर्वोड को ये दिख्छत नी"
+  },
+  {
+    "file": "03--A-917615925782---20250701163839-Unknown.wav",
+    "transcript": "चच्चिनवताई अआ आवरी जैस्टीकरीक तो बन ता एए, दो बनदा गेच्चे सदाये काए बगादी में जाग़. काज है सद्च्टिन बढोंग? शो मुसी है. चचिनवताउ मुसी च्चिनवताउ भी ज़े अंगुई इसही अशी. वी केजा नहीं हैं वी केजा नहीं जी जी जी जी नहीं जी जी जी नहीं जी अजीद गर थी है"
+  },
+  {
+    "file": "03--A-917688960203---20250701112531-Unknown.wav",
+    "transcript": "This call is now being recorded 4, 4, 2, 3. 0, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4. one training company yes yes one nursing mobile is in last this is chamanit chamanit chamanit location of the machine jwarih kbhra june gore june gore yes court poortli complaint badti rya sarij main no problem badti rya what separate okay"
+  },
+  {
+    "file": "03--A-917727842363---20250701165911-Unknown.wav",
+    "transcript": "लोग लीग लुशका ज़ा लोग लटिये जेजिनें कि सभी शुँर, ही दोजर किम देख़ा जेजिनेम दोजर जेजिनेम ब Airbnb उदेपृुट घयजिनेम भी शैवगे तुवाजर जेजिनेम बहुट हो तरी फ्वअ फाइ टीश्ग़र आपस Sab... अधेपुड Muk ved हो जा, कहमे, दिएट है तfamily जा, पर आपको, दिएट है या र स्क्तिवा, और दीच token घ्र nehmen और या उस connecting त्रु या उस"
+  },
+  {
+    "file": "03--A-919773360701---20250704113533-Unknown.wav",
+    "transcript": "फलुज सर � focused callen जी दी पेतिल यो भ ہیںूश �bas. In Rajeshwar जी सर. anyhow उझा मिज़ तो बन् dangers नहीं सर लिए लिए नहीं तेख तो लगदा वाबी लिए येग बाचे थी नहीं नमबर कनप्वमी से शेख कल लो फिरी गई नहीं आप छीग सर मैं एग भर शेख कर तो लगदा वाप देख"
+  },
+  {
+    "file": "04--A-917976395197---20250704144611-Unknown.wav",
+    "transcript": "चार। चार। दम्सेशगष से भेदाए से अफनै में क Singh में कममलैन कषवानिक से एख़़्चिस वंदरा चा उर्फाेतास या और conjunction भाँः चातोढ़। घाएं ऑा बँजर्ग � pra finished वम मुबाई नमह जी असा उंआन्पराद हो लिए. थी जी जी जी. या लवाई नम जी जी सवा नाएन, और शम च़बजी, आपऎश भी या वाई पुँँईग, वाई नाएन वाईवाईवाईऊँ, ट 생각이 लिए, आप उआप बारद वौर्द, कोंटेक्र में आँप प्षीन? जी. प्रोपिषन के आँँँँँँँँ? ने गे राम पुरागी गोँँँँँँँ, रोट का पे जश़े न वियाग! कमप्रेन के आँँँँँँँ कि अँँँँँ? मैं मिस में आई तो लिंग पूम पे वो ताकत नहीं गरा थी के सर्कमप्रेंट अडिकोल देखे प्रे खासा नहीं पीगा अख"
+  },
+  {
+    "file": "09--A-918955812414---20260323140653-Unknown.wav",
+    "transcript": "अरींक, बजा आँई तो आगी? कर वाँई को उबदे हूत कर अगी, अरींग, tenvaram nabud de hain. अरींग, बजा अगी को शुब, बजी है तो उगी को बजा आगा. किस तॉभीद नजे ऑना अगी के आगी? ऊट्या, अगी किस याखा. तिएकता है"
+  },
+  {
+    "file": "11--A-919664406751---20260323115725-Unknown (1).wav",
+    "transcript": "बद़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़़�"
+  },
+  {
+    "file": "11--A-919664406751---20260323115725-Unknown.wav",
+    "transcript": "तो तरेः at any one of those.. तो लुकोगे पर सोग किन वादे आई न! आई ज़ेझि न मरही ज़ेग हूए रुगा बाज है चिं से न मरही भी जाई ज़ेजा दाई ज़ेजता! उश्ः आपी जी तुक्दी जी आए तुक्दी दुए खाभब्वागेई। अगर देगे में का नाव है, मारवों नोवा की की ता नाव? अगर देगे"
+  },
+  {
+    "file": "11--A-919664406751---20260323120628-Unknown.wav",
+    "transcript": "नमश्काज मनजाच जन मटच देना बात साम द़् मोर इस उता Negative आँई लाई बिदी याप येख विंज"
+  },
+  {
+    "file": "13--A-919664406751---20260323142944-Unknown.wav",
+    "transcript": "अगर जाडा जेंत। दे खबाद कर लिए सा किज़ की वों वोड़ा लिए सर यार माषिन आडीव ये अल्सेडी ये दिन्मध अल्सन देता अब आजमी सोम बार है आजम अडीव ये ये बसे अगर नोड श़े नहीं मैं आप गे नमब अद दिता हों कोटा की बताउ ही नुम्बार नहींग तॐवऊट्विः वो मए एध हलो वो उrades, वो जी जी रिखो नहींग तॐवऊअं तॐवउझुं तॐवऊँझुँउँउउउइुँुुुुुुुुुुुुुू"
+  },
+  {
+    "file": "13--A-919929911341---20260323162802-Unknown.wav",
+    "transcript": "इसा कोई होणी आसा जब उतार है ऑस माही कैंका गज्टी सूँ है भी जोंसे बाब रहा है मैं किसमब लेलगटी सूँ है पुष्तों जी सर बताइं। नहीं मैंग़ भी आप सप्टी वो �棟 है जब अझा अजा मैं पुष्तों वणया, यादा, पर बवाज बद़ा कराईता. तोह की वर्ड़े, आप वोगर था है. और और उसे भाहत चलनी नद्वली तो तब भवाप ख़ुस. इसर तब देखा, ओए अप ख़ाद. तब वाप ख़ात, वब पवईडान बवाड़ा. पर"
+  },
+  {
+    "file": "14--A-916376632363---20260323141315-Unknown.wav",
+    "transcript": "वो ँो मर्द़े खा سے अगी पऩव,षोतिश तोब Shah Gold भी भी लिग जाए। जो मशेन का दिजल तेंग है उस पे पलेट लगीवी ये पलेट पे जीरो से आगे साथ नमा लिखेवें वो नमवर बताने सेर नम जीरो नहीं है या तो आरें अप्रेटर बात कर रहे है। सर कष्टमर बात कर रहे है वाप वो अप्रेटर बात कर रहा है सर इनके होनर के फाज वनेना पाजसे नमा जो मशेन का दिजल तेंग है। आप गोनमें की मैं सु नहीं है या इस पता सा वोना एक मैं में हो नहीं तोभगे याई है या सर या खेर मैंगा जीरो 3,5,1 जीरो 3 राइप ाुबल रवजु� wonderfully ठा बिशी श्वर लेखाढत Powder जे लगा घी रवजुवcol tummy छ ही पोज्त है एक। μεोंसे मोझा लिए कही चाचित लंग लवर देशे कत लिए और नहanalysing शवके बलक्व सेड़।"
+  },
+  {
+    "file": "15--A-917852043732---20250704113227-Unknown.wav",
+    "transcript": "भी बैद बे सब नहींने। वह बार नहींगा के लीँग रहांगा जा Krishna अपके पास कोल आज़ेगा नजीनेर का"
+  },
+  {
+    "file": "15--A-917898411365---20250704160331-Unknown.wav",
+    "transcript": "अग, लंबल की है? नमशका से जी, नमशका से जी, बड़ाये चेसिस नमश? जी, जीरो तेटीश जीरो तेटीश जब पन जीरो अट्टर जब पन जीरो अट्टर एड शिक्स। शेवनेद शेवनेद एग, सेवन लाईन परिया आप आप विचा के नीश हो? कमडेश्षिन की नाम से हैं ना? कमडेश्षिन कमडेश्षिन की नाम से मौवाई नमबर यह से, जिस आपने ख़ाल की है? जी, यह यह का चल दे अपके पने विषिन? मोडी के पास, मोडी, शुष्ळ एंजिन्या का से रहेंगी से? जा लागा विच्वटा रही मशीन में? एक लोदर देशनी हो जाम हो गई करनी रहें लोडर? अगर को दिखकता रहें? बजाशे विष्वटा नी रही है, वो वो में दिखकता रही है आपके लोग लेज तो उतना है में तो बन ज़ेखी हो और कोई दिखर आगी है नहीं कुष नहीं ती एक सर वोगे कमप्लें आप जब ते वोगे जागा या आप आपके पास कोल आजागा या सर मशीन ती की सर अपके कमप्लें होगे आप"
+  }
+]
