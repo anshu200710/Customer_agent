@@ -52,7 +52,7 @@ export const SERVICE_CENTERS = [
 ];
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🧠 SYSTEM PROMPT — Pure AI, no hardcoded Q&A, ultra-fast
+   🧠 SYSTEM PROMPT
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function buildSystemPrompt(callData) {
     const d = callData.extractedData;
@@ -70,76 +70,86 @@ function buildSystemPrompt(callData) {
         customer_phone: d.customer_phone && /^[6-9]\d{9}$/.test(d.customer_phone) ? d.customer_phone : null,
     };
     for (const [k, v] of Object.entries(fields)) {
-        if (v) have.push(k); else need.push(k);
+        if (v) have.push(`${k}=${v}`); else need.push(k);
     }
 
     const cityList = SERVICE_CENTERS.map(c => c.city_name).join(", ");
 
-    return `You are Priya — a warm, sweet, fast-speaking female service agent at Rajesh Motors JCB service center.
+    // Determine the single most important next question
+    let nextQuestion = "";
+    if (!d.machine_no) nextQuestion = "Ask for chassis/machine number (4-7 digit number).";
+    else if (!d.complaint_title) nextQuestion = "Ask what problem the machine has.";
+    else if (!d.machine_status) nextQuestion = "Ask: 'Machine bilkul band hai ya problem ke saath chal rahi hai?' — If customer says bilkul band/nahi chal rahi/khadi hai → set machine_status to 'Breakdown'. If customer says chal rahi hai/problem ke saath → set machine_status to 'Running With Problem'.";
+    else if (!d.city) nextQuestion = "Ask which city/shahar they are in.";
+    else if (!fields.customer_phone) nextQuestion = "Ask for their 10-digit mobile number.";
+    else nextQuestion = "All data collected. Ask: 'Aur koi problem toh nahi? Save kar dun complaint?'";
 
-CUSTOMER: ${customer}
-COLLECTED SO FAR: ${have.length ? have.map(k => `${k}=${fields[k]}`).join(" | ") : "nothing yet"}
-STILL NEED: ${need.join(", ")}
+    return `You are Priya — a warm, fast-speaking female service agent at Rajesh Motors JCB service center.
 
-YOUR JOB: Collect a JCB machine complaint or service booking.
-Required fields: machine_no (4-7 digit chassis), complaint_title, machine_status (Breakdown/Running With Problem), city (from Rajasthan), customer_phone (10 digit Indian mobile).
+CUSTOMER STATUS: ${customer}
+COLLECTED: ${have.length ? have.join(" | ") : "nothing yet"}
+STILL NEED: ${need.join(", ") || "NOTHING — ready to confirm"}
+NEXT ACTION: ${nextQuestion}
 
-LANGUAGE: Understand and reply in Hindi, English, Rajasthani, Marathi — mix naturally like a real human agent. Use "ji", "haan ji", "achha ji", "bilkul ji", "theek hai ji" naturally.
+YOUR ONLY JOB: Collect a JCB complaint. Ask ONE question at a time. Stay focused.
 
-PERSONALITY:
-- Sweet, warm, human — NOT robotic
-- Very short replies — max 10 words per response
-- Answer any side question briefly then IMMEDIATELY steer back to collecting data
-- Never repeat a question already answered
-- Extract data greedily from everything customer says
-- Sound like a real person — natural flow, warm tone
+=== LANGUAGE RULES ===
+Understand Hindi, English, Rajasthani, Marwari naturally.
+Reply in Hindi mixed with "ji", "haan ji", "achha ji", "bilkul ji", "theek hai ji".
+Keep replies SHORT — max 12-15 words. Warm, human, not robotic.
 
-SMART EXTRACTION RULES:
-- "band hai / khadi hai / start nahi / chal nahi" → machine_status: Breakdown
-- "chal rahi hai / dikkat aa rahi" → machine_status: Running With Problem  
-- "filter / service / oil change / tel badalna" → complaint_title: Service/Filter Change, status: Running With Problem
-- "dhuan / smoke" → complaint_title: Engine Smoke
-- "garam / overheat / dhak gayi" → complaint_title: Engine Overheating
-- "tel nikal raha / rissa / oil leak" → complaint_title: Oil Leakage
-- "hydraulic / cylinder / bucket" → complaint_title: Hydraulic System Failure
-- "race nahi / ras nahi / accelerator" → complaint_title: Accelerator Problem
-- "ac nahi / thanda nahi" → complaint_title: AC Not Working
-- "brake nahi" → complaint_title: Brake Failure
-- "awaaz / khatak / vibration" → complaint_title: Abnormal Noise
-- MULTIPLE PROBLEMS (critical): Customer may mention 2, 5, even 10 issues in one breath
-  → complaint_title = FIRST/PRIMARY issue
-  → complaint_details = ALL issues listed, semicolon-separated (including the first)
-  → Example: 'engine start nahi, tel nikal raha, ac nahi, khatak aa rahi, brake weak hai'
-    → complaint_title: 'Engine Not Starting'
-    → complaint_details: 'Engine Not Starting; Oil Leakage; AC Not Working; Abnormal Noise; Brake Failure'
-  → ALWAYS accumulate — never discard any complaint the customer mentions
-  → If customer adds more problems later, APPEND to complaint_details, do NOT replace
-- Rajasthani: "tel nikal ryo"=Oil Leakage, "dhak gyi"=Overheating, "band padi"=Breakdown, "rissa"=leak, "filttar"=filter, "race/ras nahi"=Accelerator, "khatak"=Noise
+=== RAJASTHANI / MARWARI UNDERSTANDING ===
+- "band padi / khadi padi / chal nahi ryi / chaalti nai" → machine is in Breakdown
+- "tel nikal ryo / rissa / risso" → Oil Leakage
+- "dhak gyi / zyada garam / tapt gyi" → Engine Overheating
+- "filttar / filtar badlana / seva karwani" → Service/Filter Change
+- "race nai / ras nai / gas nai leti" → Accelerator Problem
+- "khatak / khatakhat / aavaaz aa ri / thokata" → Abnormal Noise
+- "hydraulik / ailak / bucket nai uthta" → Hydraulic System Failure
+- "thanda nai / AC kharab" → AC Not Working
+- "brake nai lagta / rokti nai" → Brake Failure
+- "bijli nai / light nai / battery down" → Electrical Problem
+
+=== MULTI-COMPLAINT RULE ===
+Customer may say many problems in one breath. Capture ALL of them:
+- complaint_title = FIRST/PRIMARY problem
+- complaint_details = ALL problems semicolon-separated (include the first too)
+- NEVER discard any problem mentioned. Keep accumulating.
+- Example: "engine start nahi, tel nikal raha, AC nahi, brake kharab"
+  → title: "Engine Not Starting"
+  → details: "Engine Not Starting; Oil Leakage; AC Not Working; Brake Failure"
+
+=== CONVERSATION FLOW ===
+1. If customer says side things (price, engineer, wait time) → answer VERY briefly then ask your NEXT QUESTION
+2. If customer says "ek minute / ruko / dhundh raha" → say "Ji zarur." and wait
+3. If chassis not known → help: "Machine ki dashboard pe ek plate hoti hai ji, uspe number hota hai. Thoda aaram se 1-1 number bataiye."
+4. After complaint collected, ask machine status: "Machine bilkul band hai ya problem ke saath chal rahi hai?"
+   - If bilkul band / nahi chal rahi / khadi hai → machine_status = "Breakdown"
+   - If chal rahi hai / problem ke saath → machine_status = "Running With Problem"
+5. After ALL fields collected → ask: "Theek hai ji, aur koi problem toh nahi? Save kar dun?"
+6. If customer says haan/yes/theek → set ready_to_submit: true
+
+=== VALIDATION ===
+- NEVER set ready_to_submit:true if machine_no is empty
+- NEVER set ready_to_submit:true if any required field is missing
+- Only set ready_to_submit:true after customer confirms "save kar do" or "haan theek hai"
 
 VALID CITIES: ${cityList}
 
-SCENARIOS:
-- Customer says "ek minute / ruko / dhundh raha hun" → reply "Ji zarur." and wait
-- Customer says chassis not known → try to help ("machine ke dashboard pe plate pe number hota hai ji")
-- Customer mentions old complaint / engineer not coming → acknowledge warmly, ask if they want new complaint or escalation, handle it
-- Already have all data AND machine_no is confirmed valid → say "Complaint register kar raha hun ji" and set ready_to_submit:true
-- NEVER set ready_to_submit:true if machine_no field is empty or unverified — always require it
-- If customer gives phone but no valid machine yet → keep asking for chassis number
+OUTPUT FORMAT — always end response with ### and JSON:
+[your warm short reply] ### {"extracted":{"machine_no":"","complaint_title":"","machine_status":"","city":"","customer_phone":"","complaint_details":"","job_location":"","machine_location_address":""},"ready_to_submit":false}
 
-OUTPUT FORMAT (always end with this JSON after ###):
-[your short warm reply] ### {"extracted":{"machine_no":"","complaint_title":"","machine_status":"","city":"","customer_phone":"","complaint_details":"","job_location":"","machine_location_address":""},"ready_to_submit":false}
-
-CRITICAL: Reply text must be max 10 words. Warm. Human. Fast. Never robotic.`;
+CRITICAL: Stay on track. Answer side questions briefly then ALWAYS return to the NEXT ACTION above.`;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🤖 MAIN AI CALL — single Groq call, fast
+   🤖 MAIN AI CALL
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export async function getSmartAIResponse(callData) {
     try {
         callData.extractedData = sanitizeExtractedData(callData.extractedData);
 
-        // Fast regex pass first — greedily extract before Groq
+        // Fast regex pass first
         const lastUserMsg = callData.messages.filter(m => m.role === "user").pop()?.text || "";
         if (lastUserMsg) {
             const rxData = extractAllData(lastUserMsg, callData.extractedData);
@@ -161,15 +171,12 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // Auto machine_status
-        if (callData.extractedData.complaint_title && !callData.extractedData.machine_status) {
-            const t = callData.extractedData.complaint_title.toLowerCase();
-            callData.extractedData.machine_status = /not starting|engine not starting/.test(t) ? "Breakdown" : "Running With Problem";
-        }
+        // machine_status is now collected by asking the customer directly
+        // No auto-guessing here — the AI will ask "Machine bilkul band hai ya problem ke saath chal rahi hai?"
 
         const messages = [
             { role: "system", content: buildSystemPrompt(callData) },
-            ...callData.messages.slice(-6).map(m => ({
+            ...callData.messages.slice(-8).map(m => ({
                 role: m.role === "user" ? "user" : "assistant",
                 content: m.text,
             })),
@@ -182,7 +189,7 @@ export async function getSmartAIResponse(callData) {
             model: "llama-3.3-70b-versatile",
             messages,
             temperature: 0.15,
-            max_tokens: 120,
+            max_tokens: 160,
             top_p: 0.9,
         });
 
@@ -204,7 +211,7 @@ export async function getSmartAIResponse(callData) {
                     readyToSubmit = !!parsed.ready_to_submit;
                     extractedJSON = parsed.extracted || {};
                 }
-            } catch { /* ignore parse errors */ }
+            } catch { /* ignore */ }
         }
 
         // Merge extracted data from Groq
@@ -215,7 +222,6 @@ export async function getSmartAIResponse(callData) {
                 const ph = String(v).replace(/[\s\-]/g, "");
                 if (/^[6-9]\d{9}$/.test(ph)) merged.customer_phone = ph;
             } else if (k === "complaint_details") {
-                // Always accumulate — split into parts, dedup, rejoin
                 const existing = (merged.complaint_details || '').split('; ').map(s => s.trim()).filter(Boolean);
                 const incoming = String(v).split('; ').map(s => s.trim()).filter(Boolean);
                 const combined = [...existing];
@@ -228,7 +234,7 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // City match again after Groq extraction
+        // City match again after Groq
         if (merged.city && !merged.city_id) {
             const mc = matchServiceCenter(merged.city);
             if (mc) {
@@ -241,13 +247,10 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // Auto status after merge
-        if (merged.complaint_title && !merged.machine_status) {
-            const t = merged.complaint_title.toLowerCase();
-            merged.machine_status = /not starting|engine not starting/.test(t) ? "Breakdown" : "Running With Problem";
-        }
+        // machine_status is now collected by asking the customer directly
+        // No auto-guessing after merge — rely on customer's answer
 
-        // Clean reply — remove any leaked JSON
+        // Clean reply
         replyText = replyText.replace(/```[\s\S]*?```/g, "").replace(/###[\s\S]*/g, "").trim();
 
         // Validate before marking ready
@@ -270,22 +273,19 @@ export async function getSmartAIResponse(callData) {
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   ⚡ REGEX EXTRACTION — fast pre-processing before Groq
+   ⚡ REGEX EXTRACTION
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export function extractAllData(text, cur = {}) {
     const ex = {};
     const lo = text.toLowerCase().replace(/[।\.\!\?]/g, " ").replace(/\s+/g, " ").trim();
 
     // Skip hold phrases
-    if (/^(ek minute|ek second|ruko|ruk|dhundh|dekh raha|hold on|thoda|leke aata|bas|ok|haan|ha)\s*$/i.test(lo)) return {};
+    if (/^(ek minute|ek second|ruko|ruk|dhundh|dekh raha|hold on|thoda|leke aata|bas|ok|haan|ha|acha|achha)\s*$/i.test(lo)) return {};
 
-    // ── Machine number (4-7 digits, not a phone, handles split speech like "3305 447") ─────
+    // ── Machine number (4-7 digits) ──────────────────────────────
     if (!cur.machine_no) {
-        // Remove valid phone numbers first to avoid confusion
-        let noPhone = text.replace(/[6-9]d{9}/g, '');
-        // Collapse all digits (handles speech split like "3305 447" → "3305447")
+        let noPhone = text.replace(/[6-9]\d{9}/g, '');
         const digitsOnly = noPhone.replace(/[^0-9]/g, '');
-        // Try lengths 7 down to 4, skip if looks like phone start
         for (let len = 7; len >= 4; len--) {
             for (let i = 0; i <= digitsOnly.length - len; i++) {
                 const chunk = digitsOnly.slice(i, i + len);
@@ -311,7 +311,7 @@ export function extractAllData(text, cur = {}) {
         }
     }
 
-    // ── City (Devanagari + English) ───────────────────────────────
+    // ── City (Devanagari + English + Rajasthani variants) ─────────
     if (!cur.city) {
         const DEVA_MAP = {
             "भीलवाड़ा": "BHILWARA", "जयपुर": "JAIPUR", "अजमेर": "AJMER",
@@ -341,11 +341,11 @@ export function extractAllData(text, cur = {}) {
         }
     }
 
-    // ── Machine status ────────────────────────────────────────────
+    // ── Machine status (with Rajasthani) ─────────────────────────
     if (!cur.machine_status) {
-        const bkRx = /(band|khadi|khari|stop|ruk gayi|breakdown|बंद|खड़ी|chalu nahi|chalti nahi|start nahi|start nhi|nahi chal|padi hai|band padi|chal nhi rahi|chal nhi|nhi chal|nahi chalti)/;
-        const rwRx = /(chal rahi|chal rhi|running|chalu hai|dikkat|problem|चल रही|चालू है)/;
-        const svRx = /(filter|filttar|service|oil change|tel badlo|सर्विस|फिल्टर)/;
+        const bkRx = /(band|khadi|khari|stop|ruk gayi|breakdown|बंद|खड़ी|chalu nahi|chalti nahi|start nahi|start nhi|nahi chal|padi hai|band padi|chal nhi rahi|chal nhi|nhi chal|nahi chalti|band padi hai|khadi padi|chal nai ryi|chaalti nai|chal nai)/;
+        const rwRx = /(chal rahi|chal rhi|running|chalu hai|dikkat|problem|चल रही|चालू है|chal ryi|chaalti hai)/;
+        const svRx = /(filter|filttar|filtar|service|oil change|tel badlo|seva|सर्विस|फिल्टर)/;
         if (bkRx.test(lo) || bkRx.test(text)) ex.machine_status = "Breakdown";
         else if (svRx.test(lo)) ex.machine_status = "Running With Problem";
         else if (rwRx.test(lo) || rwRx.test(text)) ex.machine_status = "Running With Problem";
@@ -357,26 +357,29 @@ export function extractAllData(text, cur = {}) {
         else if (/(site|field|bahar|khet|sadak|onsite|साइट|खेत)/.test(lo)) ex.job_location = "Onsite";
     }
 
-    // ── Complaint title ───────────────────────────────────────────
+    // ── Complaint title (with Rajasthani variants) ────────────────
     if (!cur.complaint_title) {
         const mCtx = /(machine|jcb|start|chalu|engine|मशीन|इंजन)/.test(lo);
-        const ns = /(start nahi|start nhi|chalu nahi|chalu nhi|chalti nahi|chal nahi rahi|nahi chal rahi|चालू नहीं|स्टार्ट नहीं|नहीं चल)/.test(lo);
-        const bnd = /(band hai|band ho gayi|band pad|khari hai|बंद है|बंद हो)/.test(lo) && mCtx;
+        const ns = /(start nahi|start nhi|chalu nahi|chalu nhi|chalti nahi|chal nahi rahi|nahi chal rahi|चालू नहीं|स्टार्ट नहीं|नहीं चल|chal nai|start nai ho|chaalti nai)/.test(lo);
+        const bnd = /(band hai|band ho gayi|band pad|khari hai|बंद है|बंद हो|band padi|khadi padi)/.test(lo) && mCtx;
 
         if (ns || bnd) ex.complaint_title = "Engine Not Starting";
-        else if (/(filter|filttar|service|oil change)/.test(lo)) ex.complaint_title = "Service/Filter Change";
-        else if (/(dhuan|dhua|smoke|धुआं)/.test(lo)) ex.complaint_title = "Engine Smoke";
-        else if (/(garam|dhak|overheat|ubhal|tapta)/.test(lo)) ex.complaint_title = "Engine Overheating";
-        else if (/(tel nikal|oil leak|rissa|tel nikal ryo)/.test(lo)) ex.complaint_title = "Oil Leakage";
-        else if (/(hydraulic|hydro|cylinder|bucket|boom|jack)/.test(lo)) ex.complaint_title = "Hydraulic System Failure";
-        else if (/(race nahi|ras nahi|accelerator|gas nahi)/.test(lo)) ex.complaint_title = "Accelerator Problem";
-        else if (/(ac nahi|hawa nahi|thanda nahi|ac band)/.test(lo)) ex.complaint_title = "AC Not Working";
-        else if (/(brake nahi|brake nhi|rokti nahi)/.test(lo)) ex.complaint_title = "Brake Failure";
-        else if (/(bijli nahi|headlight|bulb|electrical)/.test(lo)) ex.complaint_title = "Electrical Problem";
-        else if (/(tire|tyre|pankchar|puncture|टायर)/.test(lo)) ex.complaint_title = "Tire Problem";
-        else if (/(khatakhat|khatak|thokta|awaaz aa rhi|aawaz|vibration)/.test(lo)) ex.complaint_title = "Abnormal Noise";
-        else if (/(steering|स्टीयरिंग)/.test(lo)) ex.complaint_title = "Steering Problem";
-        else if (/(gear|transmission|गियर)/.test(lo)) ex.complaint_title = "Transmission Problem";
+        else if (/(filter|filttar|filtar|service|servicing|seva|oil change|tel badlo|tel badalwana)/.test(lo)) ex.complaint_title = "Service/Filter Change";
+        else if (/(dhuan|dhua|smoke|dhuen|dhuwaan)/.test(lo)) ex.complaint_title = "Engine Smoke";
+        else if (/(garam|dhak|overheat|ubhal|tapta|tapt gyi|bahut garam|dhak gyi)/.test(lo)) ex.complaint_title = "Engine Overheating";
+        else if (/(tel nikal|oil leak|rissa|risso|tel nikal ryo|oil aa raha|tel aa raha|riss ryo)/.test(lo)) ex.complaint_title = "Oil Leakage";
+        else if (/(hydraulic|hydraulik|hydro|ailak|cylinder|bucket|boom|jack|dipper|bucket nai uthta)/.test(lo)) ex.complaint_title = "Hydraulic System Failure";
+        else if (/(race nahi|race nai|ras nahi|ras nai|accelerator|gas nahi|gas nai|pickup nahi|gas nai leti)/.test(lo)) ex.complaint_title = "Accelerator Problem";
+        else if (/(ac nahi|ac nai|hawa nahi|thanda nahi|ac band|ac kharab|cooling nahi|thando nai)/.test(lo)) ex.complaint_title = "AC Not Working";
+        else if (/(brake nahi|brake nhi|brake nai|rokti nahi|brake fail|brake kharab|rokti nai)/.test(lo)) ex.complaint_title = "Brake Failure";
+        else if (/(bijli nahi|headlight|bulb|electrical|light nahi|battery|bijli nai)/.test(lo)) ex.complaint_title = "Electrical Problem";
+        else if (/(tire|tyre|pankchar|puncture|टायर|flat)/.test(lo)) ex.complaint_title = "Tire Problem";
+        else if (/(khatakhat|khatak|thokta|awaaz aa rhi|aawaz|vibration|noise|khad khad|aavaaz aa ri|khatak aa ri)/.test(lo)) ex.complaint_title = "Abnormal Noise";
+        else if (/(steering|स्टीयरिंग|steering kharab)/.test(lo)) ex.complaint_title = "Steering Problem";
+        else if (/(gear|transmission|गियर|gear nahi|gear slip)/.test(lo)) ex.complaint_title = "Transmission Problem";
+        else if (/(coolant|paani nikal|water leak|radiator|paani)/.test(lo)) ex.complaint_title = "Coolant Leakage";
+        else if (/(boom|arm nahi|dipper nahi|arm nai uthta)/.test(lo)) ex.complaint_title = "Boom/Arm Failure";
+        else if (/(turbo|turbocharger|black smoke)/.test(lo)) ex.complaint_title = "Turbocharger Issue";
     }
 
     return ex;
