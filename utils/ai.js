@@ -67,6 +67,7 @@ function buildSystemPrompt(callData) {
         complaint_title: d.complaint_title,
         machine_status: d.machine_status,
         city: d.city,
+        city_id: d.city_id,
         customer_phone: d.customer_phone && /^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(String(d.customer_phone)) ? d.customer_phone : null,
     };
     for (const [k, v] of Object.entries(fields)) {
@@ -80,7 +81,7 @@ function buildSystemPrompt(callData) {
     if (!d.machine_no) nextQuestion = "Ask for chassis/machine number (4-7 digit number).";
     else if (!d.complaint_title) nextQuestion = "Ask what problem the machine has.";
     else if (!d.machine_status) nextQuestion = "Ask: 'Machine bilkul band hai ya problem ke saath chal rahi hai?' — If customer says bilkul band/nahi chal rahi/khadi hai → set machine_status to 'Breakdown'. If customer says chal rahi hai/problem ke saath → set machine_status to 'Running With Problem'.";
-    else if (!d.city) nextQuestion = "Ask which city/shahar they are in.";
+    else if (!d.city || !d.city_id) nextQuestion = "Ask which city/shahar they are in; confirm nearest Rajesh Motors service center if needed.";
     else if (!fields.customer_phone) nextQuestion = "Ask for their 10-digit mobile number.";
     else nextQuestion = "All data collected. Ask final confirmation once, then submit.";
 
@@ -439,7 +440,7 @@ export function matchServiceCenter(cityText) {
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function validateExtracted(data) {
     if (!data.job_location) data.job_location = "Onsite";
-    const required = ["machine_no", "complaint_title", "machine_status", "city", "customer_phone"];
+    const required = ["machine_no", "complaint_title", "machine_status", "city", "city_id", "customer_phone"];
     for (const f of required) {
         if (!data[f] || data[f] === "NA" || data[f] === "Unknown")
             return { valid: false, reason: `Missing ${f}` };
