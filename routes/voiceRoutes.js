@@ -24,6 +24,45 @@ function missingField(d) {
     return null;
 }
 
+function isPositiveConfirmation(text) {
+    return /(\b(haan|ha|han|theek hai|thik hai|save|kar do|register|done|yes|bilkul|sahi hai|ok|okay|theek|chalo|hmm)\b)/i.test(text);
+}
+
+function isNegativeConfirmation(text) {
+    return /(\b(nahi|nai|nahin|no|mat|band kar|ruk ja|ruk jai|ruk|nahin chahiye|don't|dont)\b)/i.test(text);
+}
+
+function isAddMoreProblem(text) {
+    return /(\b(aur (problem|complaint|issue|koi aur|bhi)|additional|extra|dusri|phir se complaint|another complaint|aur kuch)\b)/i.test(text) && !isNegativeConfirmation(text);
+}
+
+function isClarificationQuestion(text) {
+    return /(\b(kya|kaun|kab|kaise|kitna|kitne|kahan|kaunse|kis|naam|phone|number|engineer|wait|der|time)\b)/i.test(text)
+        && !isPositiveConfirmation(text)
+        && !isNegativeConfirmation(text)
+        && !isAddMoreProblem(text);
+}
+
+function answerSideQuestion(text) {
+    const lo = text.toLowerCase();
+    if (/नाम/.test(lo) || /aapka naam/.test(lo) || /tumhara naam/.test(lo)) {
+        return "Main Priya hun, Rajesh Motors se baat kar rahi hun.";
+    }
+    if (/engineer/.test(lo) && /(kab|kabhi|aayega|aaega|kab aayega|aayegi)/.test(lo)) {
+        return "Engineer jaldi contact karega aur aapse time confirm karega.";
+    }
+    if (/(phone|number|mobile)/.test(lo) && /kya|kaun|kaise|bataye|bataiye/.test(lo)) {
+        return "Yeh service call hai, main ab complaint register kar rahi hun.";
+    }
+    if (/(kitna der|der|wait|time|kab tak)/.test(lo)) {
+        return "Thoda hi der mein engineer contact karega, ji.";
+    }
+    if (/(kya.*kar.*rahi|kya.*ho.*raha|kaise.*hoga|kaisa.*hai)/.test(lo)) {
+        return "Main aapki complaint turant note kar rahi hun aur register kar dungi.";
+    }
+    return null;
+}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    🔊 TTS
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -35,8 +74,8 @@ function speak(twiml, text) {
         input: "speech dtmf",
         language: TTS_LANG,
         speechTimeout: "auto",
-        timeout: 5,
-        maxSpeechTime: 15,
+        timeout: 2,
+        maxSpeechTime: 10,
         actionOnEmptyResult: true,
         action: "/voice/process",
         method: "POST",
@@ -89,6 +128,9 @@ router.post("/", async (req, res) => {
             awaitingComplaintAction: false,
             existingComplaintId: null,
             awaitingFinalConfirm: false,
+            awaitingAlternatePhone: false,
+            cityConfirmed: false,
+            pendingCityConfirm: false,
             // Incremental chassis collection
             chassisPartials: [],        // e.g. ["33", "05", "447"]
             chassisAccumulated: "",     // e.g. "3305447"
@@ -305,6 +347,9 @@ router.post("/process", async (req, res) => {
                 callData.extractedData.outlet = mc.city_name;
                 callData.extractedData.lat = mc.lat;
                 callData.extractedData.lng = mc.lng;
+                if (!callData.cityConfirmed) {
+                    callData.pendingCityConfirm = true;
+                }
                 console.log(`   🗺️  ${mc.city_name} → ${mc.branch_name}`);
             }
         }
@@ -370,22 +415,69 @@ router.post("/process", async (req, res) => {
             callData.pendingPhoneConfirm = false;
             callData.awaitingPhoneConfirm = true;
             activeCalls.set(CallSid, callData);
-            speak(twiml, `${callData.customerData.name.split(" ")[0]} ji, tumhare phone mein last mein ${lastTwo} aata hai na?`);
+            speak(twiml, `${callData.customerData.name.split(" ")[0]} ji, kya aapka yehi number save karna hai jisme last mein ${lastTwo} aata hai, ya change karna hai?`);
             return res.type("text/xml").send(twiml.toString());
         }
 
         // ── STEP 6: Handle phone confirm answer ─────────────────────
         if (callData.awaitingPhoneConfirm) {
             callData.awaitingPhoneConfirm = false;
-            const isNo = /(nahi|nhi|no|change|galat|alag|dusra|naya|different|nai)/i.test(lo);
-            if (!isNo && callData.customerData?.phone) {
+            const isChange = /(change|चेंज|badal|badalna|dusra|naya|new|different|alag|no|nahi|nhi|nai)/i.test(lo);
+            if (!isChange && callData.customerData?.phone) {
                 callData.extractedData.customer_phone = callData.customerData.phone;
                 console.log(`   ✅ Phone confirmed: ${callData.customerData.phone}`);
             } else {
-                callData.extractedData.customer_phone = null;
-                console.log(`   🔄 Phone rejected — will ask again`);
+                callData.awaitingAlternatePhone = true;
+                activeCalls.set(CallSid, callData);
+                speak(twiml, "Theek hai ji, apna dusra number bataiye.");
+                return res.type("text/xml").send(twiml.toString());
             }
-            // Fall through to continue collecting
+        }
+
+        // ── STEP 6.1: Handle alternate phone number ──────────────────
+        if (callData.awaitingAlternatePhone) {
+            callData.awaitingAlternatePhone = false;
+            const compact = userInput.replace(/[\s\-,।\.]/g, "");
+            const foundNums = compact.match(/[6-9]\d{9}/g) || [];
+            if (foundNums.length > 0) {
+                const altPhone = foundNums[0];
+                const originalPhone = callData.customerData?.phone || "";
+                if (originalPhone && originalPhone !== altPhone) {
+                    callData.extractedData.customer_phone = `${originalPhone}, ${altPhone}`;
+                } else {
+                    callData.extractedData.customer_phone = altPhone;
+                }
+                console.log(`   ✅ Alternate phone saved: ${callData.extractedData.customer_phone}`);
+            } else {
+                console.log(`   🔄 No phone found in alternate input`);
+                // If they didn't provide a phone, just continue or maybe ask again?
+                // Let's just continue and let the AI catch it if missing later.
+            }
+        }
+
+        // ── STEP 6.7: City & Branch confirmation ────────────────────
+        if (callData.pendingCityConfirm) {
+            callData.pendingCityConfirm = false;
+            callData.awaitingCityConfirm = true;
+            activeCalls.set(CallSid, callData);
+            speak(twiml, `${callData.extractedData.branch} mein ${callData.extractedData.city} aapka near city rahegi?`);
+            return res.type("text/xml").send(twiml.toString());
+        }
+
+        if (callData.awaitingCityConfirm) {
+            callData.awaitingCityConfirm = false;
+            const isNo = /(nahi|nhi|no|galat|wrong|nai)/i.test(lo);
+            if (!isNo) {
+                callData.cityConfirmed = true;
+                console.log(`   ✅ City confirmed: ${callData.extractedData.city}`);
+            } else {
+                callData.extractedData.city = null;
+                callData.extractedData.city_id = null;
+                callData.extractedData.branch = null;
+                console.log(`   🔄 City rejected — will ask again`);
+                speak(twiml, "Achha ji, apni nearest city ka naam dobara bataiye.");
+                return res.type("text/xml").send(twiml.toString());
+            }
         }
 
         // ── STEP 7: Existing complaint scenario ─────────────────────
@@ -438,7 +530,14 @@ router.post("/process", async (req, res) => {
         const machineValidated = !!callData.customerData;
 
         if (!missing && machineValidated && !callData.awaitingFinalConfirm) {
-            // First time we have everything — ask "aur kuch bhi?"
+            const sideAnswer = answerSideQuestion(userInput);
+            if (sideAnswer && !isPositiveConfirmation(lo) && !isAddMoreProblem(lo) && !isNegativeConfirmation(lo)) {
+                callData.awaitingFinalConfirm = true;
+                activeCalls.set(CallSid, callData);
+                twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, sideAnswer);
+                return await handleSubmit(callData, twiml, res, CallSid);
+            }
+
             callData.awaitingFinalConfirm = true;
             activeCalls.set(CallSid, callData);
             speak(twiml, "Ji. Aur koi problem toh nahi machine mein? Save kar dun complaint?");
@@ -447,12 +546,19 @@ router.post("/process", async (req, res) => {
 
         // ── STEP 10: Handle final confirm answer ─────────────────────
         if (callData.awaitingFinalConfirm) {
-            // Check if customer is adding more problems
             const addingMore = extractAllComplaintTitles(userInput);
-            const isConfirming = /(haan|ha|han|theek|save|kar do|bilkul|register|done|bas|nahi|nai|koi nahi|aur nahi|bas itna|itna hi)/i.test(lo);
+            const isConfirming = isPositiveConfirmation(lo);
+            const isNegative = isNegativeConfirmation(lo);
+            const wantsMore = isAddMoreProblem(lo);
+
+            if (isNegative) {
+                sayFinal(twiml, "Theek hai ji. Agar kuch aur ho toh dobara call karein. Dhanyavaad!");
+                twiml.hangup();
+                activeCalls.delete(CallSid);
+                return res.type("text/xml").send(twiml.toString());
+            }
 
             if (addingMore.length > 0 && !isConfirming) {
-                // They mentioned more problems — accumulate and stay in confirm loop
                 const existingDetails = callData.extractedData.complaint_details
                     ? callData.extractedData.complaint_details.split('; ').map(s => s.trim()).filter(Boolean)
                     : [];
@@ -462,13 +568,25 @@ router.post("/process", async (req, res) => {
                     callData.extractedData.complaint_details = [...existingDetails, ...newOnes].join('; ');
                     console.log(`   📝 Added more: [${newOnes.join(', ')}]`);
                 }
-                // Ask again
+                callData.awaitingFinalConfirm = false;
                 activeCalls.set(CallSid, callData);
-                speak(twiml, "Ji, note kar liya. Aur koi problem? Ya save kar dun?");
-                return res.type("text/xml").send(twiml.toString());
+                return await handleSubmit(callData, twiml, res, CallSid);
             }
 
-            // Customer said yes/no — proceed to submit
+            const sideAnswer = answerSideQuestion(userInput);
+            if (sideAnswer && !isConfirming) {
+                twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, sideAnswer);
+                callData.awaitingFinalConfirm = false;
+                activeCalls.set(CallSid, callData);
+                return await handleSubmit(callData, twiml, res, CallSid);
+            }
+
+            if (!isConfirming && !wantsMore) {
+                callData.awaitingFinalConfirm = false;
+                activeCalls.set(CallSid, callData);
+                return await handleSubmit(callData, twiml, res, CallSid);
+            }
+
             callData.awaitingFinalConfirm = false;
             activeCalls.set(CallSid, callData);
             return await handleSubmit(callData, twiml, res, CallSid);
@@ -526,6 +644,23 @@ router.post("/process", async (req, res) => {
         if (aiResp.readyToSubmit && !machineValidated) {
             console.warn(`   ⛔ AI said ready but machine NOT validated — blocking submit`);
             aiResp.text = "Machine number nahi mila ji. Sahi chassis number bataiye.";
+            aiResp.readyToSubmit = false;
+        }
+
+        // If AI marked as ready to submit, do it immediately
+        if (aiResp.readyToSubmit && machineValidated) {
+            callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
+            const result = await submitComplaint(callData);
+            const id = result.sapId || result.jobId || "";
+            
+            if (id) {
+                sayFinal(twiml, `Humne aapki complaint register kar di hai ji. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
+            } else {
+                sayFinal(twiml, "Humne aapki complaint register kar di hai ji. Engineer jaldi contact karega. Dhanyavaad!");
+            }
+            twiml.hangup();
+            activeCalls.delete(CallSid);
+            return res.type("text/xml").send(twiml.toString());
         }
 
         callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
@@ -550,12 +685,10 @@ async function handleSubmit(callData, twiml, res, CallSid) {
     const result = await submitComplaint(callData);
     const id = result.sapId || result.jobId || "";
 
-    if (result.success && id) {
-        sayFinal(twiml, `Complaint register ho gayi ji. Number hai ${String(id).split("").join(" ")}. Engineer jaldi aayega. Dhanyavaad!`);
-    } else if (result.success) {
-        sayFinal(twiml, "Complaint register ho gayi ji. Engineer jaldi aayega. Dhanyavaad!");
+    if (id) {
+        sayFinal(twiml, `Humne aapki complaint register kar di hai ji. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
     } else {
-        sayFinal(twiml, "Complaint note ho gayi ji. Engineer contact karega. Dhanyavaad!");
+        sayFinal(twiml, "Humne aapki complaint register kar di hai ji. Engineer jaldi contact karega. Dhanyavaad!");
     }
 
     twiml.hangup();
@@ -733,11 +866,13 @@ async function submitComplaint(callData) {
             machine_location_address: data.machine_location_address || "Not provided",
             pincode: "0",
             service_date: "", from_time: "", to_time: "",
-            job_open_lat: data.lat || 0,
-            job_open_lng: data.lng || 0,
-            job_close_lat: data.lat || 0,
-            job_close_lng: data.lng || 0,
         };
+        if (data.lat != null && data.lng != null) {
+            payload.job_open_lat = data.lat;
+            payload.job_open_lng = data.lng;
+            payload.job_close_lat = data.lat;
+            payload.job_close_lng = data.lng;
+        }
 
         console.log("📤 Submitting:", JSON.stringify(payload, null, 2));
 

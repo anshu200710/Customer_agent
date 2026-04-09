@@ -67,7 +67,7 @@ function buildSystemPrompt(callData) {
         complaint_title: d.complaint_title,
         machine_status: d.machine_status,
         city: d.city,
-        customer_phone: d.customer_phone && /^[6-9]\d{9}$/.test(d.customer_phone) ? d.customer_phone : null,
+        customer_phone: d.customer_phone && /^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(String(d.customer_phone)) ? d.customer_phone : null,
     };
     for (const [k, v] of Object.entries(fields)) {
         if (v) have.push(`${k}=${v}`); else need.push(k);
@@ -82,7 +82,7 @@ function buildSystemPrompt(callData) {
     else if (!d.machine_status) nextQuestion = "Ask: 'Machine bilkul band hai ya problem ke saath chal rahi hai?' — If customer says bilkul band/nahi chal rahi/khadi hai → set machine_status to 'Breakdown'. If customer says chal rahi hai/problem ke saath → set machine_status to 'Running With Problem'.";
     else if (!d.city) nextQuestion = "Ask which city/shahar they are in.";
     else if (!fields.customer_phone) nextQuestion = "Ask for their 10-digit mobile number.";
-    else nextQuestion = "All data collected. Ask: 'Aur koi problem toh nahi? Save kar dun complaint?'";
+    else nextQuestion = "All data collected. Ask final confirmation once, then submit.";
 
     return `You are Priya — a warm, fast-speaking female service agent at Rajesh Motors JCB service center.
 
@@ -92,6 +92,9 @@ STILL NEED: ${need.join(", ") || "NOTHING — ready to confirm"}
 NEXT ACTION: ${nextQuestion}
 
 YOUR ONLY JOB: Collect a JCB complaint. Ask ONE question at a time. Stay focused.
+If all required fields are collected and the customer asks a direct question, answer it briefly and then submit the complaint or confirm only once.
+Do not repeat the same final confirmation prompt twice.
+Do not use canned reply templates or hardcoded phrases. Always generate natural Hindi responses that fit the customer’s exact question.
 
 === LANGUAGE RULES ===
 Understand Hindi, English, Rajasthani, Marwari naturally.
@@ -124,6 +127,7 @@ Customer may say many problems in one breath. Capture ALL of them:
 2. If customer says "ek minute / ruko / dhundh raha" → say "Ji zarur." and wait
 3. If chassis not known → help: "Machine ki dashboard pe ek plate hoti hai ji, uspe number hota hai. Thoda aaram se 1-1 number bataiye."
 4. After complaint collected, ask machine status: "Machine bilkul band hai ya problem ke saath chal rahi hai?"
+4.1 If all required fields are already collected and customer asks a direct question, answer it briefly and then proceed to register the complaint.
    - If bilkul band / nahi chal rahi / khadi hai → machine_status = "Breakdown"
    - If chal rahi hai / problem ke saath → machine_status = "Running With Problem"
 5. After ALL fields collected → ask: "Theek hai ji, aur koi problem toh nahi? Save kar dun?"
@@ -220,7 +224,7 @@ export async function getSmartAIResponse(callData) {
             if (!v || v === "NA" || v === "") continue;
             if (k === "customer_phone") {
                 const ph = String(v).replace(/[\s\-]/g, "");
-                if (/^[6-9]\d{9}$/.test(ph)) merged.customer_phone = ph;
+                if (/^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(ph)) merged.customer_phone = ph;
             } else if (k === "complaint_details") {
                 const existing = (merged.complaint_details || '').split('; ').map(s => s.trim()).filter(Boolean);
                 const incoming = String(v).split('; ').map(s => s.trim()).filter(Boolean);
@@ -429,14 +433,14 @@ function validateExtracted(data) {
         if (!data[f] || data[f] === "NA" || data[f] === "Unknown")
             return { valid: false, reason: `Missing ${f}` };
     }
-    if (!/^[6-9]\d{9}$/.test(data.customer_phone)) return { valid: false, reason: "Bad phone" };
+    if (!/^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(String(data.customer_phone))) return { valid: false, reason: "Bad phone" };
     if (!/^\d{4,7}$/.test(data.machine_no)) return { valid: false, reason: "Bad machine_no" };
     return { valid: true };
 }
 
 export function sanitizeExtractedData(data) {
     const c = { ...data };
-    if (c.customer_phone && !/^[6-9]\d{9}$/.test(c.customer_phone)) c.customer_phone = null;
+    if (c.customer_phone && !/^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(String(c.customer_phone))) c.customer_phone = null;
     if (c.machine_no && !/^\d{4,7}$/.test(c.machine_no)) c.machine_no = null;
     return c;
 }
