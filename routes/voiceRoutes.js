@@ -45,11 +45,17 @@ function isClarificationQuestion(text) {
 
 function answerSideQuestion(text) {
     const lo = text.toLowerCase();
-    if (/नाम/.test(lo) || /aapka naam/.test(lo) || /tumhara naam/.test(lo)) {
+    if (/नाम/.test(lo) || /aapka naam/.test(lo) || /tumhara naam/.test(lo) || /main kaun/.test(lo) || /kaun bol raha/.test(lo) || /tum kaun/.test(lo) || /aap kaun/.test(lo)) {
         return "Main Priya hun, Rajesh Motors se baat kar rahi hun.";
+    }
+    if (/कंपनी|कंप्लेंट|register|register kar|register karna|complaint/.test(lo) && /कब|कहाँ|कितना|नहीं|नहीं/.test(lo) === false) {
+        return "Ji, complaint register karte hain. Sabse pehle chassis number bataiye.";
     }
     if (/engineer/.test(lo) && /(kab|kabhi|aayega|aaega|kab aayega|aayegi)/.test(lo)) {
         return "Engineer jaldi contact karega aur aapse time confirm karega.";
+    }
+    if (/बदल|change|चेंज|नया नंबर|phone number|mobile number/.test(lo) && /(बता|दे|की)/.test(lo)) {
+        return "Theek hai ji, naya number bataiye.";
     }
     if (/(phone|number|mobile)/.test(lo) && /kya|kaun|kaise|bataye|bataiye/.test(lo)) {
         return "Yeh service call hai, main ab complaint register kar rahi hun.";
@@ -57,7 +63,7 @@ function answerSideQuestion(text) {
     if (/(kitna der|der|wait|time|kab tak)/.test(lo)) {
         return "Thoda hi der mein engineer contact karega, ji.";
     }
-    if (/(kya.*kar.*rahi|kya.*ho.*raha|kaise.*hoga|kaisa.*hai)/.test(lo)) {
+    if (/(kya.*kar.*rahi|kya.*ho.*raha|kaise.*hoga|kaisa.*hai|kaise.*honge)/.test(lo)) {
         return "Main aapki complaint turant note kar rahi hun aur register kar dungi.";
     }
     return null;
@@ -222,6 +228,14 @@ router.post("/process", async (req, res) => {
             return res.type("text/xml").send(twiml.toString());
         }
         callData.silenceCount = 0;
+
+        const earlyAnswer = answerSideQuestion(userInput);
+        if (earlyAnswer && !callData.awaitingPhoneConfirm && !callData.awaitingAlternatePhone && !callData.awaitingCityConfirm && !callData.awaitingComplaintAction && !callData.awaitingFinalConfirm) {
+            callData.messages.push({ role: "assistant", text: earlyAnswer, timestamp: new Date() });
+            activeCalls.set(CallSid, callData);
+            speak(twiml, earlyAnswer);
+            return res.type("text/xml").send(twiml.toString());
+        }
 
         callData.messages.push({ role: "user", text: userInput, timestamp: new Date() });
 
@@ -422,15 +436,23 @@ router.post("/process", async (req, res) => {
         // ── STEP 6: Handle phone confirm answer ─────────────────────
         if (callData.awaitingPhoneConfirm) {
             callData.awaitingPhoneConfirm = false;
-            const isChange = /(change|चेंज|badal|badalna|dusra|naya|new|different|alag|no|nahi|nhi|nai)/i.test(lo);
-            if (!isChange && callData.customerData?.phone) {
-                callData.extractedData.customer_phone = callData.customerData.phone;
-                console.log(`   ✅ Phone confirmed: ${callData.customerData.phone}`);
+            const compact = userInput.replace(/[\s\-,।\.]/g, "");
+            const foundNums = compact.match(/[6-9]\d{9}/g) || [];
+            if (foundNums.length > 0) {
+                const newPhone = foundNums[0];
+                callData.extractedData.customer_phone = newPhone;
+                console.log(`   ✅ Phone changed by direct input: ${newPhone}`);
             } else {
-                callData.awaitingAlternatePhone = true;
-                activeCalls.set(CallSid, callData);
-                speak(twiml, "Theek hai ji, apna dusra number bataiye.");
-                return res.type("text/xml").send(twiml.toString());
+                const isChange = /(change|चेंज|badal|badalna|dusra|naya|new|different|alag|no|nahi|nhi|nai)/i.test(lo);
+                if (!isChange && callData.customerData?.phone) {
+                    callData.extractedData.customer_phone = callData.customerData.phone;
+                    console.log(`   ✅ Phone confirmed: ${callData.customerData.phone}`);
+                } else {
+                    callData.awaitingAlternatePhone = true;
+                    activeCalls.set(CallSid, callData);
+                    speak(twiml, "Theek hai ji, apna dusra number bataiye.");
+                    return res.type("text/xml").send(twiml.toString());
+                }
             }
         }
 

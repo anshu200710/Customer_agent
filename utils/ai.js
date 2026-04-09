@@ -281,7 +281,17 @@ export async function getSmartAIResponse(callData) {
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export function extractAllData(text, cur = {}) {
     const ex = {};
-    const lo = text.toLowerCase().replace(/[।\.\!\?]/g, " ").replace(/\s+/g, " ").trim();
+    const numberMap = {
+        "एक": "1", "दो": "2", "तीन": "3", "चार": "4", "पांच": "5", "पाँच": "5", "छह": "6", "सात": "7", "आठ": "8", "नौ": "9", "शून्य": "0",
+        "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+        "teen": "3", "char": "4", "paanch": "5", "chhe": "6", "saat": "7", "aath": "8", "nau": "9",
+        "ek": "1", "do": "2", "teen": "3", "chaar": "4", "paanch": "5", "chhe": "6", "saat": "7", "aath": "8", "nau": "9",
+    };
+    let normalizedText = text;
+    for (const [word, digit] of Object.entries(numberMap)) {
+        normalizedText = normalizedText.replace(new RegExp(`\\b${word}\\b`, "gi"), digit);
+    }
+    const lo = normalizedText.toLowerCase().replace(/[।\.\!\?]/g, " ").replace(/\s+/g, " ").trim();
 
     // Skip hold phrases
     if (/^(ek minute|ek second|ruko|ruk|dhundh|dekh raha|hold on|thoda|leke aata|bas|ok|haan|ha|acha|achha)\s*$/i.test(lo)) return {};
@@ -318,7 +328,7 @@ export function extractAllData(text, cur = {}) {
     // ── City (Devanagari + English + Rajasthani variants) ─────────
     if (!cur.city) {
         const DEVA_MAP = {
-            "भीलवाड़ा": "BHILWARA", "जयपुर": "JAIPUR", "अजमेर": "AJMER",
+            "भीलवाड़ा": "BHILWARA", "बड़ी": "BHILWARA", "जयपुर": "JAIPUR", "अजमेर": "AJMER",
             "अलवर": "ALWAR", "जोधपुर": "JODHPUR", "उदयपुर": "UDAIPUR",
             "कोटा": "KOTA", "सीकर": "SIKAR", "बीकानेर": "BIKANER",
             "टोंक": "TONK", "झुंझुनू": "JHUNJHUNU", "दौसा": "DAUSA",
@@ -402,6 +412,7 @@ export function matchServiceCenter(cityText) {
     const PARTIAL_MAP = {
         "JAYPUR": "JAIPUR", "JYPUR": "JAIPUR", "VKI": "VKIA",
         "ABU": "ABU ROAD", "SWARUP": "SWARUPGANJ", "NEEM": "NEEM KA THANA",
+        "BADHI": "BHILWARA", "BADI": "BHILWARA", "BHIL": "BHILWARA",
         "JHUNJ": "JHUNJHUNU", "RAMGANJ": "RAMGANJMANDI", "SAWAI": "SAWAI MADHOPUR",
         "GANGANA": "GANGANAGAR", "HANUMAN": "HANUMANGARH", "CHITT": "CHITTORGARH",
         "PRATAP": "PRATAPGARH", "BANSWA": "BANSWARA", "RAJSAM": "RAJSAMAND",
