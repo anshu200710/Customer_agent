@@ -59,25 +59,25 @@ function isClarificationQuestion(text) {
 function answerSideQuestion(text) {
     const lo = text.toLowerCase();
     if (/नाम/.test(lo) || /aapka naam/.test(lo) || /tumhara naam/.test(lo) || /main kaun/.test(lo) || /kaun bol raha/.test(lo) || /tum kaun/.test(lo) || /aap kaun/.test(lo)) {
-        return "Main Priya hun, Rajesh Motors se baat kar rahi hun.";
+        return "Main Priya, Rajesh Motors se.";
     }
     if (/कंपनी|कंप्लेंट|register|register kar|register karna|complaint/.test(lo) && /कब|कहाँ|कितना|नहीं|नहीं/.test(lo) === false) {
-        return "Ji, complaint register karte hain. Sabse pehle chassis number bataiye.";
+        return "Haan, complaint register karte hain. Pehle machine number bataiye.";
     }
     if (/engineer/.test(lo) && /(kab|kabhi|aayega|aaega|kab aayega|aayegi)/.test(lo)) {
-        return "Engineer jaldi contact karega aur aapse time confirm karega.";
+        return "Engineer jaldi call karega.";
     }
     if (/बदल|change|चेंज|नया नंबर|phone number|mobile number/.test(lo) && /(बता|दे|की)/.test(lo)) {
-        return "Theek hai ji, naya number bataiye.";
+        return "Haan, naya number bataiye.";
     }
     if (/(phone|number|mobile)/.test(lo) && /kya|kaun|kaise|bataye|bataiye/.test(lo)) {
-        return "Yeh service call hai, main ab complaint register kar rahi hun.";
+        return "Service call hai, complaint register kar rahi hun.";
     }
     if (/(kitna der|der|wait|time|kab tak)/.test(lo)) {
-        return "Thoda hi der mein engineer contact karega, ji.";
+        return "Jaldi engineer call karega.";
     }
     if (/(kya.*kar.*rahi|kya.*ho.*raha|kaise.*hoga|kaisa.*hai|kaise.*honge)/.test(lo)) {
-        return "Main aapki complaint turant note kar rahi hun aur register kar dungi.";
+        return "Complaint note kar rahi hun.";
     }
     return null;
 }
@@ -100,6 +100,7 @@ function speak(twiml, text) {
         method: "POST",
         enhanced: true,
         speechModel: "phone_call",
+        bargeIn: false,
     });
     gather.say({ voice: TTS_VOICE, language: TTS_LANG }, text);
 }
@@ -182,7 +183,7 @@ router.post("/", async (req, res) => {
 
         const greeting = callData.customerData
             ? `Namaste ${callData.customerData.name.split(" ")[0]} ji, kya problem hai?`
-            : "Namaste ji, Rajesh Motors mein aapka swagat hai. Kya seva kar sakti hun?";
+            : "Namaste, Rajesh Motors. Bataiye, kya problem hai?";
 
         speak(twiml, greeting);
         res.type("text/xml").send(twiml.toString());
@@ -230,12 +231,12 @@ router.post("/process", async (req, res) => {
             callData.silenceCount++;
             const hasData = !!(callData.customerData || callData.extractedData.machine_no);
             if (callData.silenceCount >= (hasData ? 5 : 3)) {
-                sayFinal(twiml, "Koi awaaz nahi aayi ji. Dobara call karein.");
+                sayFinal(twiml, "Awaaz nahi aa rahi. Dobara call kijiye.");
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
             }
-            const silenceReplies = ["Ji bataiye.", "Ji hun.", "Haan ji?", "Ji, sun rahi hun.", "Bataiye ji."];
+            const silenceReplies = ["Haan?", "Suniye", "Boliye", "Kya hua?", "Bataiye na", "Haan bataiye"];
             speak(twiml, silenceReplies[Math.min(callData.silenceCount - 1, silenceReplies.length - 1)]);
             activeCalls.set(CallSid, callData);
             return res.type("text/xml").send(twiml.toString());

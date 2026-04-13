@@ -654,28 +654,28 @@ export function handleSilenceOrEmpty(callData) {
   const step = callData.step || '';
   const retries = callData.retries || 0;
 
-  // Step-specific silence hints
+  // Step-specific silence hints - more natural and varied
   const silenceHints = {
     ask_machine_no: [
-      "Mujhe aapki aawaz nahi aayi. Kripya apna machine number plate par dekh kar boliye.",
-      "Main sun nahi payi. Kripya ek ek number saaf aawaz mein boliye.",
-      "Kya aap machine ke paas hain? Kripya number dekh kar dhire se boliye.",
+      "Awaaz nahi aayi. Machine number bataiye.",
+      "Sunai nahi diya. Number dobara boliye.",
+      "Machine ke paas hain? Number dekh kar boliye.",
     ],
     ask_city: [
-      "Nearest service station ka naam nahi suna. Kaunsa branch hai?",
-      "Kahan ka service center hai — Jaipur, Kota, ya koi aur branch?",
+      "City nahi suni. Kaunsa branch hai?",
+      "Kahan hai — Jaipur, Kota, Ajmer?",
     ],
     ask_engineer_location: [
-      "Kuch nahi suna. Workshop ya jagah ka naam boliye.",
-      "Engineer kahan aaye? Address ya area batayein.",
+      "Sunai nahi diya. Kahan hai machine?",
+      "Engineer kahan bhejein? Area bataiye.",
     ],
     ask_phone: [
-      "Phone number samajh nahi aaya. Kripya apna pura 10 anko ka mobile number boliye.",
-      "Awaaz saaf nahi aayi. Kripya apna 10 digit ka mobile number boliye.",
+      "Number samajh nahi aaya. Dobara boliye.",
+      "Awaaz saaf nahi aayi. Aapka number?",
     ],
     ask_complaint: [
-      "Problem nahi suni. Machine mein kya kharaabi hai?",
-      "Kya baat hai — engine, brake, gear, ya koi aur problem?",
+      "Problem nahi suni. Kya kharaabi hai?",
+      "Kya problem hai — engine, brake, kya?",
     ],
   };
 
@@ -683,7 +683,7 @@ export function handleSilenceOrEmpty(callData) {
   if (hints) {
     return hints[retries % hints.length];
   }
-  return callData.lastQuestion || "Kripya clearly boliye.";
+  return callData.lastQuestion || "Zara saaf boliye.";
 }
 
 /* =====================================================================
