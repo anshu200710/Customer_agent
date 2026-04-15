@@ -93,8 +93,8 @@ function speak(twiml, text) {
         input: "speech dtmf",
         language: TTS_LANG,
         speechTimeout: "auto",
-        timeout: 2,
-        maxSpeechTime: 10,
+        timeout: 5,          // wait 5 seconds for customer to start speaking
+        maxSpeechTime: 15,   // give more time for longer responses
         actionOnEmptyResult: true,
         action: "/voice/process",
         method: "POST",
@@ -229,13 +229,22 @@ router.post("/process", async (req, res) => {
         if (!userInput || userInput.length < 2) {
             callData.silenceCount++;
             const hasData = !!(callData.customerData || callData.extractedData.machine_no);
-            if (callData.silenceCount >= (hasData ? 5 : 3)) {
+
+            // Hang up after 5 silent turns (uniform for all callers)
+            if (callData.silenceCount >= 5) {
                 sayFinal(twiml, "Koi awaaz nahi aayi ji. Dobara call karein.");
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
             }
-            const silenceReplies = ["Ji bataiye.", "Ji hun.", "Haan ji?", "Ji, sun rahi hun.", "Bataiye ji."];
+
+            // Patient, varied prompts — give customer time to gather themselves
+            const silenceReplies = [
+                "Ji bataiye, sun rahi hun.",             // 1st silence
+                "Haan ji, koi baat nahi, bataiye.",      // 2nd silence
+                "Ji, main yahan hun. Aaram se bataiye.", // 3rd silence
+                "Theek hai ji, jab ready hon bataiye.",  // 4th silence
+            ];
             speak(twiml, silenceReplies[Math.min(callData.silenceCount - 1, silenceReplies.length - 1)]);
             activeCalls.set(CallSid, callData);
             return res.type("text/xml").send(twiml.toString());
@@ -449,19 +458,10 @@ router.post("/process", async (req, res) => {
         // ── STEP 6: Handle phone confirm answer ─────────────────────
         if (callData.awaitingPhoneConfirm) {
             callData.awaitingPhoneConfirm = false;
-<<<<<<< HEAD
-            const compact = userInput.replace(/[\s\-,।\.]/g, "");
-            const foundNums = compact.match(/[6-9]\d{9}/g) || [];
-            if (foundNums.length > 0) {
-                const newPhone = foundNums[0];
-                callData.extractedData.customer_phone = newPhone;
-                console.log(`   ✅ Phone changed by direct input: ${newPhone}`);
-=======
             const foundPhone = parsePhoneFromText(userInput);
             if (foundPhone) {
                 callData.extractedData.customer_phone = foundPhone;
                 console.log(`   ✅ Phone changed by direct input: ${foundPhone}`);
->>>>>>> 5ba368651e24829bc1c4d6c5af73408200f08c67
             } else {
                 const isChange = /(change|चेंज|badal|badalna|dusra|naya|new|different|alag|no|nahi|nhi|nai)/i.test(lo);
                 if (!isChange && callData.customerData?.phone) {
