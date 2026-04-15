@@ -19,8 +19,21 @@ function missingField(d) {
     if (!d.machine_no || !/^\d{4,7}$/.test(d.machine_no)) return "machine_no";
     if (!d.complaint_title) return "complaint_title";
     if (!d.machine_status) return "machine_status";
-    if (!d.city) return "city";
+    if (!d.city || !d.city_id) return "city";
     if (!d.customer_phone || !/^[6-9]\d{9}$/.test(d.customer_phone)) return "customer_phone";
+    return null;
+}
+
+function parsePhoneFromText(text) {
+    const extracted = extractAllData(text, { customer_phone: null });
+    if (extracted.customer_phone) return extracted.customer_phone;
+    const compact = text.replace(/[\s\-,।\.]/g, "");
+    const digits = compact.replace(/[^0-9]/g, "");
+    if (/^[6-9]\d{9}$/.test(digits)) return digits;
+    if (digits.length >= 10) {
+        const candidate = digits.slice(-10);
+        if (/^[6-9]\d{9}$/.test(candidate)) return candidate;
+    }
     return null;
 }
 
@@ -436,12 +449,19 @@ router.post("/process", async (req, res) => {
         // ── STEP 6: Handle phone confirm answer ─────────────────────
         if (callData.awaitingPhoneConfirm) {
             callData.awaitingPhoneConfirm = false;
+<<<<<<< HEAD
             const compact = userInput.replace(/[\s\-,।\.]/g, "");
             const foundNums = compact.match(/[6-9]\d{9}/g) || [];
             if (foundNums.length > 0) {
                 const newPhone = foundNums[0];
                 callData.extractedData.customer_phone = newPhone;
                 console.log(`   ✅ Phone changed by direct input: ${newPhone}`);
+=======
+            const foundPhone = parsePhoneFromText(userInput);
+            if (foundPhone) {
+                callData.extractedData.customer_phone = foundPhone;
+                console.log(`   ✅ Phone changed by direct input: ${foundPhone}`);
+>>>>>>> 5ba368651e24829bc1c4d6c5af73408200f08c67
             } else {
                 const isChange = /(change|चेंज|badal|badalna|dusra|naya|new|different|alag|no|nahi|nhi|nai)/i.test(lo);
                 if (!isChange && callData.customerData?.phone) {
@@ -459,21 +479,21 @@ router.post("/process", async (req, res) => {
         // ── STEP 6.1: Handle alternate phone number ──────────────────
         if (callData.awaitingAlternatePhone) {
             callData.awaitingAlternatePhone = false;
-            const compact = userInput.replace(/[\s\-,।\.]/g, "");
-            const foundNums = compact.match(/[6-9]\d{9}/g) || [];
-            if (foundNums.length > 0) {
-                const altPhone = foundNums[0];
+            const foundPhone = parsePhoneFromText(userInput);
+            if (foundPhone) {
                 const originalPhone = callData.customerData?.phone || "";
-                if (originalPhone && originalPhone !== altPhone) {
-                    callData.extractedData.customer_phone = `${originalPhone}, ${altPhone}`;
+                if (originalPhone && originalPhone !== foundPhone) {
+                    callData.extractedData.customer_phone = `${originalPhone}, ${foundPhone}`;
                 } else {
-                    callData.extractedData.customer_phone = altPhone;
+                    callData.extractedData.customer_phone = foundPhone;
                 }
                 console.log(`   ✅ Alternate phone saved: ${callData.extractedData.customer_phone}`);
             } else {
                 console.log(`   🔄 No phone found in alternate input`);
-                // If they didn't provide a phone, just continue or maybe ask again?
-                // Let's just continue and let the AI catch it if missing later.
+                callData.awaitingAlternatePhone = true;
+                activeCalls.set(CallSid, callData);
+                speak(twiml, "Ji, thoda clearly 10 digit ka mobile number bataiye.");
+                return res.type("text/xml").send(twiml.toString());
             }
         }
 
@@ -889,12 +909,10 @@ async function submitComplaint(callData) {
             pincode: "0",
             service_date: "", from_time: "", to_time: "",
         };
-        if (data.lat != null && data.lng != null) {
-            payload.job_open_lat = data.lat;
-            payload.job_open_lng = data.lng;
-            payload.job_close_lat = data.lat;
-            payload.job_close_lng = data.lng;
-        }
+        payload.job_open_lat = data.lat != null ? data.lat : 0;
+        payload.job_open_lng = data.lng != null ? data.lng : 0;
+        payload.job_close_lat = data.lat != null ? data.lat : 0;
+        payload.job_close_lng = data.lng != null ? data.lng : 0;
 
         console.log("📤 Submitting:", JSON.stringify(payload, null, 2));
 
