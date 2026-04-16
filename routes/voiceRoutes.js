@@ -92,9 +92,9 @@ function speak(twiml, text) {
     const gather = twiml.gather({
         input: "speech dtmf",
         language: TTS_LANG,
-        speechTimeout: "auto",
-        timeout: 2,
-        maxSpeechTime: 10,
+        speechTimeout: 1.5,  // 1.5 seconds pause after customer stops talking
+        timeout: 5,          // 5 seconds wait if customer doesn't speak at all
+        maxSpeechTime: 15,
         actionOnEmptyResult: true,
         action: "/voice/process",
         method: "POST",
