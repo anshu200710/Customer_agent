@@ -49,19 +49,19 @@ function answerSideQuestion(text) {
         return "Main Priya hun, Rajesh Motors se baat kar rahi hun.";
     }
     if (/कंपनी|कंप्लेंट|register|register kar|register karna|complaint/.test(lo) && /कब|कहाँ|कितना|नहीं|नहीं/.test(lo) === false) {
-        return "Ji, complaint register karte hain. Sabse pehle chassis number bataiye.";
+        return "Complaint register karte hain. Sabse pehle chassis number bataiye.";
     }
     if (/engineer/.test(lo) && /(kab|kabhi|aayega|aaega|kab aayega|aayegi)/.test(lo)) {
-        return "Engineer jaldi contact karega aur aapse time confirm karega.";
+        return "Engineer jaldi contact karega.";
     }
     if (/बदल|change|चेंज|नया नंबर|phone number|mobile number/.test(lo) && /(बता|दे|की)/.test(lo)) {
-        return "Theek hai ji, naya number bataiye.";
+        return "Naya number bataiye.";
     }
     if (/(phone|number|mobile)/.test(lo) && /kya|kaun|kaise|bataye|bataiye/.test(lo)) {
         return "Yeh service call hai, main ab complaint register kar rahi hun.";
     }
     if (/(kitna der|der|wait|time|kab tak)/.test(lo)) {
-        return "Thoda hi der mein engineer contact karega, ji.";
+        return "Thoda hi der mein engineer contact karega.";
     }
     if (/(kya.*kar.*rahi|kya.*ho.*raha|kaise.*hoga|kaisa.*hai|kaise.*honge)/.test(lo)) {
         return "Main aapki complaint turant note kar rahi hun aur register kar dungi.";
@@ -70,7 +70,33 @@ function answerSideQuestion(text) {
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🔊 TTS
+   � NORMALIZE SPOKEN DIGITS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function normalizeSpokenDigits(text) {
+   const map = {
+      "zero":"0","shunya":"0",
+      "ek":"1",
+      "do":"2",
+      "teen":"3",
+      "char":"4",
+      "paanch":"5",
+      "cheh":"6","chhe":"6",
+      "saat":"7",
+      "aath":"8",
+      "nau":"9"
+   };
+
+   let t = text.toLowerCase();
+
+   Object.entries(map).forEach(([k,v])=>{
+      t = t.replace(new RegExp(`\\b${k}\\b`,"gi"), v);
+   });
+
+   return t.replace(/\D/g,'');
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   �🔊 TTS
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 const TTS_VOICE = "Google.hi-IN-Wavenet-A";
 const TTS_LANG = "hi-IN";
@@ -79,9 +105,9 @@ function speak(twiml, text) {
     const gather = twiml.gather({
         input: "speech dtmf",
         language: TTS_LANG,
-        speechTimeout: "auto",
-        timeout: 2,
-        maxSpeechTime: 10,
+        speechTimeout: 'auto',  // Increased from "auto" to 3 seconds for longer pauses
+        timeout: 3,        // Increased from 2 to 5 seconds to give more time
+        maxSpeechTime: 10, // Increased from 10 to 15 seconds for longer responses
         actionOnEmptyResult: true,
         action: "/voice/process",
         method: "POST",
@@ -89,6 +115,24 @@ function speak(twiml, text) {
         speechModel: "phone_call",
     });
     gather.say({ voice: TTS_VOICE, language: TTS_LANG }, text);
+    // Add a pause after speaking to give customer time to respond
+    gather.pause({ length: 1 });
+}
+
+function gatherSilently(twiml) {
+    const gather = twiml.gather({
+        input: "speech dtmf",
+        language: TTS_LANG,
+        speechTimeout: 'auto',
+        timeout: 3,
+        maxSpeechTime: 10,
+        actionOnEmptyResult: true,
+        action: "/voice/process",
+        method: "POST",
+        enhanced: true,
+        speechModel: "phone_call",
+    });
+    gather.pause({ length: 1 });
 }
 
 function sayFinal(twiml, text) {
@@ -172,17 +216,15 @@ router.post("/", async (req, res) => {
         activeCalls.set(CallSid, callData);
 
         const greeting = callData.customerData
-            ? `Namaste ${callData.customerData.name.split(" ")[0]} ji, kya problem hai?`
-            : "Namaste ji, Rajesh Motors mein aapka swagat hai. Kya seva kar sakti hun?";
+            ? `Namaste ${callData.customerData.name.split(" ")[0]}, kya problem hai?`
+            : "Namaste, Rajesh Motors mein aapka swagat hai. Kya seva kar sakti hun?";
 
         speak(twiml, greeting);
         res.type("text/xml").send(twiml.toString());
 
     } catch (err) {
         console.error("❌ [START]", err.message);
-        sayFinal(twiml, "Thodi problem aa gayi ji. Thodi der baad call karein.");
-        twiml.hangup();
-        res.type("text/xml").send(twiml.toString());
+        sayFinal(twiml, "Thodi problem aa gayi. Thodi der baad call karein.");
     }
 });
 
@@ -196,7 +238,7 @@ router.post("/process", async (req, res) => {
     try {
         const callData = activeCalls.get(CallSid);
         if (!callData) {
-            sayFinal(twiml, "Dobara call karein ji.");
+            sayFinal(twiml, "Dobara call karein.");
             twiml.hangup();
             return res.type("text/xml").send(twiml.toString());
         }
@@ -210,7 +252,7 @@ router.post("/process", async (req, res) => {
 
         // ── Hard turn limit ─────────────────────────────────────────
         if (callData.turnCount > 25) {
-            sayFinal(twiml, "Engineer ko message kar diya ji. Dhanyavaad!");
+            sayFinal(twiml, "Engineer ko message kar diya. Dhanyavaad!");
             twiml.hangup();
             activeCalls.delete(CallSid);
             return res.type("text/xml").send(twiml.toString());
@@ -221,12 +263,12 @@ router.post("/process", async (req, res) => {
             callData.silenceCount++;
             const hasData = !!(callData.customerData || callData.extractedData.machine_no);
             if (callData.silenceCount >= (hasData ? 5 : 3)) {
-                sayFinal(twiml, "Koi awaaz nahi aayi ji. Dobara call karein.");
+                sayFinal(twiml, "Koi awaaz nahi aayi. Dobara call karein.");
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
             }
-            const silenceReplies = ["Ji bataiye.", "Ji hun.", "Haan ji?", "Ji, sun rahi hun.", "Bataiye ji."];
+            const silenceReplies = ["Bataiye.", "Main sun rahi hun.", "Haan?", "Sun rahi hun.", "Bataiye."];
             speak(twiml, silenceReplies[Math.min(callData.silenceCount - 1, silenceReplies.length - 1)]);
             activeCalls.set(CallSid, callData);
             return res.type("text/xml").send(twiml.toString());
@@ -243,15 +285,38 @@ router.post("/process", async (req, res) => {
 
         callData.messages.push({ role: "user", text: userInput, timestamp: new Date() });
 
+        // ── EARLY COMPLAINT CAPTURE ──────────────────────────────────
+        // Extract complaints immediately when customer speaks, even before machine number
+        const earlyComplaints = extractAllComplaintTitles(userInput);
+        if (earlyComplaints.length) {
+           if (!callData.extractedData.complaint_title) {
+              callData.extractedData.complaint_title = earlyComplaints[0];
+           }
+
+           const existing = callData.extractedData.complaint_details
+              ? callData.extractedData.complaint_details.split("; ")
+              : [];
+
+           callData.extractedData.complaint_details = [...new Set([
+              ...existing,
+              ...earlyComplaints
+           ])].join("; ");
+        }
+
         // ── STEP 1: Fast regex extraction ───────────────────────────
         callData.extractedData = sanitizeExtractedData(callData.extractedData);
 
         // ── STEP 1.5: Incremental chassis number accumulation ────────
         // If we are waiting for more chassis digits, handle that first
         if (callData.awaitingChassisMore && !callData.customerData) {
-            const digitsInInput = userInput.replace(/[^0-9]/g, '');
+            const digitsInInput = normalizeSpokenDigits(userInput);
             if (digitsInInput.length > 0 && digitsInInput.length <= 7) {
-                callData.chassisPartials.push(digitsInInput);
+                // If user suddenly gives full number, replace partials
+                if (digitsInInput.length >= 6) {
+                   callData.chassisPartials = [digitsInInput];
+                } else {
+                   callData.chassisPartials.push(digitsInInput);
+                }
                 const spokenDigits = digitsInInput.split('').join(' ');
 
                 console.log(`   🔢 Chassis chunk: "${digitsInInput}" → partials: [${callData.chassisPartials.join(', ')}]`);
@@ -300,13 +365,13 @@ router.post("/process", async (req, res) => {
                                 console.log(`   ✅ Phone fallback: ${pr.data.name}`);
                                 // Fall through
                             } else {
-                                sayFinal(twiml, "Chassis number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!");
+                                sayFinal(twiml, "Chassis number nahi mil raha. Engineer ko message bhej deta hun. Dhanyavaad!");
                                 twiml.hangup();
                                 activeCalls.delete(CallSid);
                                 return res.type("text/xml").send(twiml.toString());
                             }
                         } else {
-                            sayFinal(twiml, "Chassis number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!");
+                            sayFinal(twiml, "Chassis number nahi mil raha. Engineer ko message bhej deta hun. Dhanyavaad!");
                             twiml.hangup();
                             activeCalls.delete(CallSid);
                             return res.type("text/xml").send(twiml.toString());
@@ -316,7 +381,7 @@ router.post("/process", async (req, res) => {
                         callData.awaitingChassisMore = true;
                         activeCalls.set(CallSid, callData);
                         const accumulated = callData.chassisPartials.join('');
-                        speak(twiml, `Ji, ${accumulated.split('').join(' ')}. Aur bhi digits bataiye yi`);
+                        speak(twiml, `Abhi ${accumulated.split('').join(' ')}. Aur digits bataiye.`);
                         return res.type("text/xml").send(twiml.toString());
                     }
                 }
@@ -328,41 +393,59 @@ router.post("/process", async (req, res) => {
         // ── STEP 1.5.1: Incremental phone number accumulation ────────
         // If we are waiting for more phone digits, handle that first
         if (callData.awaitingPhoneMore) {
-            const digitsInInput = userInput.replace(/[^0-9]/g, '');
-            if (digitsInInput.length > 0 && digitsInInput.length <= 10) {
-                callData.phonePartials.push(digitsInInput);
-                callData.phoneAccumulated = callData.phonePartials.join('');
-                const accumulated = callData.phoneAccumulated;
-                console.log(`   📱 Phone chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
+            const fullPhone = parsePhoneFromText(userInput);
+            if (fullPhone) {
+                callData.extractedData.customer_phone = fullPhone;
+                callData.phonePartials = [];
+                callData.phoneAccumulated = "";
+                callData.awaitingPhoneMore = false;
+                console.log(`   ✅ Phone collected from full input: ${fullPhone}`);
+            } else {
+                const digitsInInput = normalizeSpokenDigits(userInput);
+                if (digitsInInput.length > 0 && digitsInInput.length <= 10) {
+                    if (digitsInInput.length >= 9) {
+                        callData.phonePartials = [digitsInInput];
+                    } else {
+                        callData.phonePartials.push(digitsInInput);
+                    }
+                    callData.phoneAccumulated = callData.phonePartials.join('');
+                    const accumulated = callData.phoneAccumulated;
+                    console.log(`   📱 Phone chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
 
-                if (accumulated.length === 10 && /^[6-9]/.test(accumulated)) {
-                    if (callData.awaitingAlternatePhone) {
-                        const originalPhone = callData.customerData?.phone || "";
-                        if (originalPhone && originalPhone !== accumulated) {
-                            callData.extractedData.customer_phone = `${originalPhone}, ${accumulated}`;
+                    if (accumulated.length === 10 && /^[6-9]/.test(accumulated)) {
+                        if (callData.awaitingAlternatePhone) {
+                            const originalPhone = callData.customerData?.phone || "";
+                            if (originalPhone && originalPhone !== accumulated) {
+                                callData.extractedData.customer_phone = `${originalPhone}, ${accumulated}`;
+                            } else {
+                                callData.extractedData.customer_phone = accumulated;
+                            }
+                            callData.awaitingAlternatePhone = false;
                         } else {
                             callData.extractedData.customer_phone = accumulated;
                         }
-                        callData.awaitingAlternatePhone = false;
+                        callData.phonePartials = [];
+                        callData.phoneAccumulated = '';
+                        callData.awaitingPhoneMore = false;
+                        console.log(`   ✅ Phone collected via chunks: ${accumulated}`);
+                    } else if (accumulated.length < 5) {
+                        callData.awaitingPhoneMore = true;
+                        activeCalls.set(CallSid, callData);
+                        gatherSilently(twiml);
+                        return res.type("text/xml").send(twiml.toString());
+                    } else if (accumulated.length < 10) {
+                        callData.awaitingPhoneMore = true;
+                        activeCalls.set(CallSid, callData);
+                        speak(twiml, `Abhi ${accumulated.split('').join(' ')} mila hai. Baaki number bataiye.`);
+                        return res.type("text/xml").send(twiml.toString());
                     } else {
-                        callData.extractedData.customer_phone = accumulated;
+                        // Invalid accumulated phone, reset
+                        callData.phonePartials = [];
+                        callData.phoneAccumulated = '';
+                        callData.awaitingPhoneMore = false;
+                        speak(twiml, "Phone number galat laga. Dobara pura number bataiye.");
+                        return res.type("text/xml").send(twiml.toString());
                     }
-                    callData.phonePartials = [];
-                    callData.phoneAccumulated = '';
-                    callData.awaitingPhoneMore = false;
-                    console.log(`   ✅ Phone collected via chunks: ${accumulated}`);
-                } else if (accumulated.length < 10) {
-                    callData.awaitingPhoneMore = true;
-                    activeCalls.set(CallSid, callData);
-                    speak(twiml, `${accumulated.split('').join(' ')} confirm, aage ke digits bataiye.`);
-                    return res.type("text/xml").send(twiml.toString());
-                } else {
-                    // Invalid accumulated phone, reset
-                    callData.phonePartials = [];
-                    callData.phoneAccumulated = '';
-                    callData.awaitingPhoneMore = false;
-                    speak(twiml, "Phone number galat laga ji. Dobara pura number bataiye.");
-                    return res.type("text/xml").send(twiml.toString());
                 }
             }
             // If no digits found in input, stop waiting for phone and continue normal flow
@@ -386,7 +469,8 @@ router.post("/process", async (req, res) => {
             const alreadyHave = new Set([callData.extractedData.complaint_title, ...existingDetails]);
             const newOnes = allFoundComplaints.filter(c => !alreadyHave.has(c));
             if (newOnes.length > 0) {
-                callData.extractedData.complaint_details = [...existingDetails, ...newOnes].join('; ');
+                const all = [...existingDetails, ...newOnes];
+                callData.extractedData.complaint_details = [...new Set(all)].join("; ");
                 console.log(`   📝 Multi-complaints: ${callData.extractedData.complaint_title} + [${newOnes.join(', ')}]`);
             }
         }
@@ -405,6 +489,10 @@ router.post("/process", async (req, res) => {
                     callData.pendingCityConfirm = true;
                 }
                 console.log(`   🗺️  ${mc.city_name} → ${mc.branch_name}`);
+            } else {
+                // Remove hallucinated city
+                callData.extractedData.city = null;
+                console.log(`   ❌ Hallucinated city removed: ${callData.extractedData.city}`);
             }
         }
 
@@ -448,12 +536,12 @@ router.post("/process", async (req, res) => {
                     callData.chassisPartials = [];
                     callData.chassisAccumulated = '';
                     activeCalls.set(CallSid, callData);
-                    speak(twiml, `Ji, yeh chassis number nahi mila. Thoda aaram se bataiye, pehle 2-3 number bataiye, main repeat karungi.`);
+                    speak(twiml, `Yeh chassis number nahi mila. Thoda aaram se bataiye, pehle 2-3 number bataiye, main repeat karungi.`);
                     return res.type("text/xml").send(twiml.toString());
                 }
 
                 if (callData.machineNotFoundCount >= 5) {
-                    sayFinal(twiml, "Chassis number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!");
+                    sayFinal(twiml, "Chassis number nahi mil raha. Engineer ko message bhej deta hun. Dhanyavaad!");
                     twiml.hangup();
                     activeCalls.delete(CallSid);
                     return res.type("text/xml").send(twiml.toString());
@@ -469,7 +557,7 @@ router.post("/process", async (req, res) => {
             callData.pendingPhoneConfirm = false;
             callData.awaitingPhoneConfirm = true;
             activeCalls.set(CallSid, callData);
-            speak(twiml, `${callData.customerData.name.split(" ")[0]} ji, kya aapka yehi number save karna hai jisme last mein ${lastTwo} aata hai, ya change karna hai?`);
+            speak(twiml, `${callData.customerData.name.split(" ")[0]}, kya yehi number save karna hai jisme last mein ${lastTwo} aata hai, ya change karna hai?`);
             return res.type("text/xml").send(twiml.toString());
         }
 
@@ -491,12 +579,12 @@ router.post("/process", async (req, res) => {
                     // User doesn't want to change, just proceed with existing phone
                     callData.extractedData.customer_phone = callData.customerData.phone;
                     console.log(`   ✅ Phone confirmed (बदलवाना): ${callData.customerData.phone}`);
-                } else if (!isChangeRequest && callData.customerData?.phone) {
+                } else if (isPositiveConfirmation(userInput) && callData.customerData?.phone) {
                     callData.extractedData.customer_phone = callData.customerData.phone;
                     console.log(`   ✅ Phone confirmed: ${callData.customerData.phone}`);
                 } else if (isChangeRequest) {
                     // Check for chunked phone input
-                    const digitsInInput = userInput.replace(/[^0-9]/g, '');
+                    const digitsInInput = normalizeSpokenDigits(userInput);
                     if (digitsInInput.length > 0 && digitsInInput.length <= 10) {
                         callData.phonePartials.push(digitsInInput);
                         callData.phoneAccumulated = callData.phonePartials.join('');
@@ -512,20 +600,20 @@ router.post("/process", async (req, res) => {
                         } else if (accumulated.length < 10) {
                             callData.awaitingPhoneMore = true;
                             activeCalls.set(CallSid, callData);
-                            speak(twiml, `${accumulated.split('').join(' ')} confirm, aage ke digits bataiye.`);
+                            speak(twiml, `Abhi ${accumulated.split('').join(' ')} mila hai. Baaki number bataiye.`);
                             return res.type("text/xml").send(twiml.toString());
                         } else {
                             // Invalid accumulated phone, reset
                             callData.phonePartials = [];
                             callData.phoneAccumulated = '';
                             callData.awaitingPhoneMore = false;
-                            speak(twiml, "Phone number galat laga ji. Dobara pura number bataiye.");
+                            speak(twiml, "Phone number galat laga. Dobara pura number bataiye.");
                             return res.type("text/xml").send(twiml.toString());
                         }
                     } else {
                         callData.awaitingAlternatePhone = true;
                         activeCalls.set(CallSid, callData);
-                        speak(twiml, "Theek hai ji, apna dusra number bataiye.");
+                        speak(twiml, "Apna dusra number bataiye.");
                         return res.type("text/xml").send(twiml.toString());
                     }
                 }
@@ -546,9 +634,13 @@ router.post("/process", async (req, res) => {
                 console.log(`   ✅ Alternate phone saved: ${callData.extractedData.customer_phone}`);
             } else {
                 // Check for chunked phone input
-                const digitsInInput = userInput.replace(/[^0-9]/g, '');
+                const digitsInInput = normalizeSpokenDigits(userInput);
                 if (digitsInInput.length > 0 && digitsInInput.length <= 10) {
-                    callData.phonePartials.push(digitsInInput);
+                    if (digitsInInput.length >= 9) {
+                        callData.phonePartials = [digitsInInput];
+                    } else {
+                        callData.phonePartials.push(digitsInInput);
+                    }
                     callData.phoneAccumulated = callData.phonePartials.join('');
                     const accumulated = callData.phoneAccumulated;
                     console.log(`   📱 Alternate phone chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
@@ -564,17 +656,22 @@ router.post("/process", async (req, res) => {
                         callData.phoneAccumulated = '';
                         callData.awaitingPhoneMore = false;
                         console.log(`   ✅ Alternate phone collected via chunks: ${accumulated}`);
+                    } else if (accumulated.length < 5) {
+                        callData.awaitingPhoneMore = true;
+                        activeCalls.set(CallSid, callData);
+                        gatherSilently(twiml);
+                        return res.type("text/xml").send(twiml.toString());
                     } else if (accumulated.length < 10) {
                         callData.awaitingPhoneMore = true;
                         activeCalls.set(CallSid, callData);
-                        speak(twiml, `${accumulated.split('').join(' ')} confirm, aage ke digits bataiye.`);
+                        speak(twiml, `Abhi ${accumulated.split('').join(' ')} mila hai. Baaki number bataiye.`);
                         return res.type("text/xml").send(twiml.toString());
                     } else {
                         // Invalid accumulated phone, reset
                         callData.phonePartials = [];
                         callData.phoneAccumulated = '';
                         callData.awaitingPhoneMore = false;
-                        speak(twiml, "Phone number galat laga ji. Dobara pura number bataiye.");
+                        speak(twiml, "Phone number galat laga. Dobara pura number bataiye.");
                         return res.type("text/xml").send(twiml.toString());
                     }
                 } else {
@@ -604,7 +701,7 @@ router.post("/process", async (req, res) => {
                 callData.extractedData.city_id = null;
                 callData.extractedData.branch = null;
                 console.log(`   🔄 City rejected — will ask again`);
-                speak(twiml, "Achha ji, apni nearest city ka naam dobara bataiye.");
+                speak(twiml, "Apni nearest city ka naam dobara bataiye.");
                 return res.type("text/xml").send(twiml.toString());
             }
         }
@@ -629,11 +726,11 @@ router.post("/process", async (req, res) => {
                 if (existingInfo?.found) {
                     callData.existingComplaintId = existingInfo.complaintId;
                     activeCalls.set(CallSid, callData);
-                    speak(twiml, `Ji, complaint ${existingInfo.complaintId} mili. Nayi complaint karein ya engineer ko urgent message bhejein?`);
+                    speak(twiml, `Complaint ${existingInfo.complaintId} mili. Nayi complaint karein ya engineer ko urgent message bhejein?`);
                 } else {
                     callData.awaitingComplaintAction = false;
                     activeCalls.set(CallSid, callData);
-                    speak(twiml, "Ji. Pehli complaint nahi mili. Nayi register karta hun. Chassis number bataiye.");
+                    speak(twiml, "Pehli complaint nahi mili. Nayi register karta hun. Chassis number bataiye.");
                 }
                 return res.type("text/xml").send(twiml.toString());
             }
@@ -645,7 +742,7 @@ router.post("/process", async (req, res) => {
             const wantsUrgent = /(urgent|jaldi|message|engineer ko|escalate|priority)/i.test(lo);
             if (wantsUrgent) {
                 await escalateToEngineer(callData.existingComplaintId, callData.callingNumber);
-                sayFinal(twiml, "Ji bilkul. Engineer ko urgent message bhej diya. Jaldi aayega. Dhanyavaad ji!");
+                sayFinal(twiml, "Engineer ko urgent message bhej diya. Jaldi aayega. Dhanyavaad!");
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
@@ -658,7 +755,7 @@ router.post("/process", async (req, res) => {
         const missing = missingField(callData.extractedData);
         const machineValidated = !!callData.customerData;
 
-        if (!missing && machineValidated && !callData.awaitingFinalConfirm) {
+        if (!missing && machineValidated && callData.cityConfirmed && !callData.awaitingFinalConfirm) {
             const sideAnswer = answerSideQuestion(userInput);
             if (sideAnswer && !isPositiveConfirmation(lo) && !isAddMoreProblem(lo) && !isNegativeConfirmation(lo)) {
                 callData.awaitingFinalConfirm = true;
@@ -669,7 +766,7 @@ router.post("/process", async (req, res) => {
 
             callData.awaitingFinalConfirm = true;
             activeCalls.set(CallSid, callData);
-            speak(twiml, "Ji. Aur koi problem toh nahi machine mein? Save kar dun complaint?");
+            speak(twiml, "Aur koi problem toh nahi machine mein? Save kar dun complaint?");
             return res.type("text/xml").send(twiml.toString());
         }
 
@@ -681,7 +778,7 @@ router.post("/process", async (req, res) => {
             const wantsMore = isAddMoreProblem(lo);
 
             if (isNegative) {
-                sayFinal(twiml, "Theek hai ji. Agar kuch aur ho toh dobara call karein. Dhanyavaad!");
+                sayFinal(twiml, "Agar kuch aur ho toh dobara call karein. Dhanyavaad!");
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
@@ -735,7 +832,7 @@ router.post("/process", async (req, res) => {
             // Safety net — shouldn't reach here normally (caught in step 9)
             callData.awaitingFinalConfirm = true;
             activeCalls.set(CallSid, callData);
-            speak(twiml, "Ji. Aur koi problem toh nahi? Save kar dun?");
+            speak(twiml, "Aur koi problem toh nahi? Save kar dun?");
             return res.type("text/xml").send(twiml.toString());
         }
 
@@ -765,27 +862,41 @@ router.post("/process", async (req, res) => {
             callData.awaitingFinalConfirm = true;
             callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
             activeCalls.set(CallSid, callData);
-            speak(twiml, "Ji. Aur koi problem toh nahi machine mein? Save kar dun complaint?");
+            speak(twiml, "Aur koi problem toh nahi machine mein? Save kar dun complaint?");
             return res.type("text/xml").send(twiml.toString());
         }
 
         // HARD GUARD: never submit unless machine validated
         if (aiResp.readyToSubmit && !machineValidated) {
             console.warn(`   ⛔ AI said ready but machine NOT validated — blocking submit`);
-            aiResp.text = "Machine number nahi mila ji. Sahi chassis number bataiye.";
+            aiResp.text = "Machine number nahi mila. Sahi chassis number bataiye.";
             aiResp.readyToSubmit = false;
         }
 
-        // If AI marked as ready to submit, do it immediately
-        if (aiResp.readyToSubmit && machineValidated) {
+        // HARD GUARD: never submit unless city confirmed
+        if (aiResp.readyToSubmit && !callData.cityConfirmed) {
+            console.warn(`   ⛔ AI said ready but city NOT confirmed — blocking submit`);
+            aiResp.text = "Pehle aapka sheher confirm karein.";
+            aiResp.readyToSubmit = false;
+        }
+
+        // HARD GUARD: never submit unless phone confirmed
+        if (aiResp.readyToSubmit && !callData.extractedData.customer_phone) {
+            console.warn(`   ⛔ AI said ready but phone NOT confirmed — blocking submit`);
+            aiResp.text = "Pehle phone number confirm karein.";
+            aiResp.readyToSubmit = false;
+        }
+
+        // If AI marked as ready to submit, do it immediately (only if all guards pass)
+        if (aiResp.readyToSubmit && machineValidated && callData.cityConfirmed && callData.extractedData.customer_phone) {
             callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
             const result = await submitComplaint(callData);
             const id = result.sapId || result.jobId || "";
             
             if (id) {
-                sayFinal(twiml, `Humne aapki complaint register kar di hai ji. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
+                sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
             } else {
-                sayFinal(twiml, "Humne aapki complaint register kar di hai ji. Engineer jaldi contact karega. Dhanyavaad!");
+                sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!");
             }
             twiml.hangup();
             activeCalls.delete(CallSid);
@@ -799,7 +910,7 @@ router.post("/process", async (req, res) => {
 
     } catch (err) {
         console.error("❌ [PROCESS]", err.message);
-        sayFinal(twiml, "Thodi dikkat aa gayi ji. Engineer ko bhej raha hun.");
+        sayFinal(twiml, "Thodi dikkat aa gayi. Engineer ko bhej raha hun.");
         twiml.dial(process.env.HUMAN_AGENT_NUMBER || "+919876543210");
         activeCalls.delete(CallSid);
         res.type("text/xml").send(twiml.toString());
@@ -815,9 +926,9 @@ async function handleSubmit(callData, twiml, res, CallSid) {
     const id = result.sapId || result.jobId || "";
 
     if (id) {
-        sayFinal(twiml, `Humne aapki complaint register kar di hai ji. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
+        sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
     } else {
-        sayFinal(twiml, "Humne aapki complaint register kar di hai ji. Engineer jaldi contact karega. Dhanyavaad!");
+        sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!");
     }
 
     twiml.hangup();

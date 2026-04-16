@@ -14,7 +14,7 @@ export const KNOWLEDGE_BASE = {
       "company ka naam kya hai", "aap kahan se ho", "tum kahan se ho",
       "service center ka naam kya hai", "rajesh motors kya hai"
     ],
-    answer: "Main Priya hun, Rajesh Motors se baat kar rahi hun. JCB machine ki service ke liye hum yahan hain ji."
+    answer: "Main Priya hun, Rajesh Motors se baat kar rahi hun. JCB machine ki service ke liye hum yahan hain."
   },
 
   // Company and Service Info
@@ -24,7 +24,7 @@ export const KNOWLEDGE_BASE = {
       "branches kahan hain", "service points kahan hain", "workshop kahan hai",
       "nearby service center", "closest service center"
     ],
-    answer: "Rajesh Motors Rajasthan mein multiple locations par hai. Aapke city ke nearest center se engineer aayega ji."
+    answer: "Rajesh Motors Rajasthan mein multiple locations par hai. Aapke city ke nearest center se engineer aayega."
   },
 
   // Complaint Registration Process
@@ -34,7 +34,7 @@ export const KNOWLEDGE_BASE = {
       "kya karna hai complaint ke liye", "process kya hai", "procedure kya hai",
       "kitna time lagega", "kab tak hoga", "kab engineer aayega"
     ],
-    answer: "Ji, bas thoda sa information dijiye - chassis number, problem bataiye, aur location confirm kijiye. Fir complaint register ho jayega aur engineer jaldi contact karega."
+    answer: "Bas thoda sa information dijiye - chassis number, problem bataiye, aur location confirm kijiye. Fir complaint register ho jayega aur engineer jaldi contact karega."
   },
 
   // Chassis Number Help
@@ -44,7 +44,7 @@ export const KNOWLEDGE_BASE = {
       "machine pe kahan likha hai", "number kahan se dekhe", "plate kahan hai",
       "chassis number nahi pata", "number bhool gaya", "number nahi malum"
     ],
-    answer: "Ji, machine ki dashboard pe ek plate hoti hai, uspe chassis number likha hota hai. Thoda dekh lijiye, ya operator se puch lijiye."
+    answer: "Machine ki dashboard pe ek plate hoti hai, uspe chassis number likha hota hai. Thoda dekh lijiye, ya operator se puch lijiye."
   },
 
   // Phone Number Questions
@@ -53,7 +53,7 @@ export const KNOWLEDGE_BASE = {
       "phone number kyu chahiye", "mobile number kyu", "phone kyu pooch rahe ho",
       "phone number ka use kya hai", "number kyu save karna hai"
     ],
-    answer: "Ji, engineer ko contact karne ke liye aur complaint update dene ke liye aapka number save karte hain."
+    answer: "Engineer ko contact karne ke liye aur complaint update dene ke liye aapka number save karte hain."
   },
 
   // Wait Time and Urgency
@@ -63,7 +63,7 @@ export const KNOWLEDGE_BASE = {
       "kitni der mein aayega", "kab tak hoga", "kab tak solve hoga",
       "urgent hai", "jaldi karo", "turant karo", "abhi karo"
     ],
-    answer: "Ji, complaint register karte hi engineer ko message chala jayega. Normal mein 2-4 ghante mein contact karega, urgent case mein jaldi."
+    answer: "Complaint register karte hi engineer ko message chala jayega. Normal mein 2-4 ghante mein contact karega, urgent case mein jaldi."
   },
 
   // Location/City Questions
@@ -72,7 +72,7 @@ export const KNOWLEDGE_BASE = {
       "city kaise pata kare", "location kaise confirm kare", "shahar ka naam kya hai",
       "nearby city", "kis city mein ho", "location change kaise kare"
     ],
-    answer: "Ji, aapke current location bataiye ya nearest city ka naam. Humare service centers Rajasthan ke saare main cities mein hain."
+    answer: "Aapke current location bataiye ya nearest city ka naam. Humare service centers Rajasthan ke saare main cities mein hain."
   },
 
   // Problem/Machine Status
@@ -81,7 +81,7 @@ export const KNOWLEDGE_BASE = {
       "machine status kya hai", "machine ka haal kya hai", "machine ki condition kya hai",
       "problem ka type kya hai", "kya problem hai machine mein"
     ],
-    answer: "Ji, bataiye machine abhi bilkul band hai ya problem ke saath chal rahi hai? Aur kya kya problem ho rahi hai?"
+    answer: "Bataiye machine abhi bilkul band hai ya problem ke saath chal rahi hai? Aur kya kya problem ho rahi hai?"
   },
 
   // Angry Customer Responses
@@ -92,33 +92,33 @@ export const KNOWLEDGE_BASE = {
       "koi response nahi", "ignore kar rahe", "dhyaan nahi de rahe"
     ],
     responses: [
-      "Samajh raha hun ji, aapko kaafi pareshani ho rahi hai. Main abhi turant check karke solve karwata hun.",
-      "Maaf kijiye ji, aapko inconvenience hua. Main personally ensure karungi ki engineer jaldi pahunche.",
-      "Sorry ji, delay ke liye. Ab complaint escalate karte hain, priority mein le lenge.",
-      "Understand kar raha hun ji, frustration kaafi hoti hai. Abhi dekhta hun pehle complaint ka status."
+      "Samajh raha hun, aapko pareshani ho rahi hai. Main abhi check karke solve karwata hun.",
+      "Maaf kijiye, aapko inconvenience hua. Main personally ensure karungi ki engineer jaldi pahunche.",
+      "Sorry, delay ke liye. Ab complaint escalate karte hain, priority mein le lenge.",
+      "Understand kar raha hun, frustration kaafi hoti hai. Abhi dekhta hun pehle complaint ka status."
     ]
   },
 
   // Hold/Wait Responses
   hold_responses: [
-    "Ji zarur, ruko ji.",
-    "Theek hai ji, ek minute.",
-    "Bilkul ji, thodi der ruko.",
-    "Ok ji, abhi wait karo."
+    "Ruko.",
+    "Ek minute.",
+    "Thodi der ruko.",
+    "Wait karo."
   ],
 
   // Confusion Responses
   confusion_responses: [
-    "Samajh nahi aaya ji, thoda clear kijiye.",
-    "Thoda explain kijiye ji.",
-    "Kya matlab tha ji, dobara bataiye."
+    "Samajh nahi aaya, thoda clear kijiye.",
+    "Thoda explain kijiye.",
+    "Kya matlab tha, dobara bataiye."
   ],
 
   // Repeat Responses
   repeat_responses: [
-    "Dobara bolti hun ji - ",
-    "Phir se kehti hun ji - ",
-    "Clear karte hue kehti hun ji - "
+    "Dobara bolti hun - ",
+    "Phir se kehti hun - ",
+    "Clear karte hue kehti hun - "
   ]
 };
 
@@ -173,7 +173,7 @@ export function getIntentResponse(intent, lastSpoken = "") {
 
     case 'REPEAT':
       const repeatResp = KNOWLEDGE_BASE.repeat_responses[Math.floor(Math.random() * KNOWLEDGE_BASE.repeat_responses.length)];
-      return lastSpoken ? repeatResp + lastSpoken : "Dobara bataiye ji.";
+      return lastSpoken ? repeatResp + lastSpoken : "Dobara bataiye.";
 
     default:
       return null;
