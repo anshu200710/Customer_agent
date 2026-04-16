@@ -1,7 +1,7 @@
 import express from "express";
 import twilio from "twilio";
 import axios from "axios";
-import { getSmartAIResponse, extractAllData, sanitizeExtractedData, matchServiceCenter } from "../utils/ai.js";
+import { getSmartAIResponse, extractAllData, sanitizeExtractedData, matchServiceCenter, parsePhoneFromText, generateChassisVariations } from "../utils/ai.js";
 
 const router = express.Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -19,21 +19,8 @@ function missingField(d) {
     if (!d.machine_no || !/^\d{4,7}$/.test(d.machine_no)) return "machine_no";
     if (!d.complaint_title) return "complaint_title";
     if (!d.machine_status) return "machine_status";
-    if (!d.city || !d.city_id) return "city";
+    if (!d.city) return "city";
     if (!d.customer_phone || !/^[6-9]\d{9}$/.test(d.customer_phone)) return "customer_phone";
-    return null;
-}
-
-function parsePhoneFromText(text) {
-    const extracted = extractAllData(text, { customer_phone: null });
-    if (extracted.customer_phone) return extracted.customer_phone;
-    const compact = text.replace(/[\s\-,।\.]/g, "");
-    const digits = compact.replace(/[^0-9]/g, "");
-    if (/^[6-9]\d{9}$/.test(digits)) return digits;
-    if (digits.length >= 10) {
-        const candidate = digits.slice(-10);
-        if (/^[6-9]\d{9}$/.test(candidate)) return candidate;
-    }
     return null;
 }
 
@@ -93,8 +80,8 @@ function speak(twiml, text) {
         input: "speech dtmf",
         language: TTS_LANG,
         speechTimeout: "auto",
-        timeout: 5,          // wait 5 seconds for customer to start speaking
-        maxSpeechTime: 15,   // give more time for longer responses
+        timeout: 2,
+        maxSpeechTime: 10,
         actionOnEmptyResult: true,
         action: "/voice/process",
         method: "POST",
@@ -154,6 +141,10 @@ router.post("/", async (req, res) => {
             chassisPartials: [],        // e.g. ["33", "05", "447"]
             chassisAccumulated: "",     // e.g. "3305447"
             awaitingChassisMore: false, // waiting for next chunk
+            // Incremental phone collection
+            phonePartials: [],          // e.g. ["98765", "43210"]
+            phoneAccumulated: "",       // e.g. "9876543210"
+            awaitingPhoneMore: false,   // waiting for next phone chunk
         };
 
         // Phone-based pre-lookup (silent)
@@ -229,22 +220,13 @@ router.post("/process", async (req, res) => {
         if (!userInput || userInput.length < 2) {
             callData.silenceCount++;
             const hasData = !!(callData.customerData || callData.extractedData.machine_no);
-
-            // Hang up after 5 silent turns (uniform for all callers)
-            if (callData.silenceCount >= 5) {
+            if (callData.silenceCount >= (hasData ? 5 : 3)) {
                 sayFinal(twiml, "Koi awaaz nahi aayi ji. Dobara call karein.");
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
             }
-
-            // Patient, varied prompts — give customer time to gather themselves
-            const silenceReplies = [
-                "Ji bataiye, sun rahi hun.",             // 1st silence
-                "Haan ji, koi baat nahi, bataiye.",      // 2nd silence
-                "Ji, main yahan hun. Aaram se bataiye.", // 3rd silence
-                "Theek hai ji, jab ready hon bataiye.",  // 4th silence
-            ];
+            const silenceReplies = ["Ji bataiye.", "Ji hun.", "Haan ji?", "Ji, sun rahi hun.", "Bataiye ji."];
             speak(twiml, silenceReplies[Math.min(callData.silenceCount - 1, silenceReplies.length - 1)]);
             activeCalls.set(CallSid, callData);
             return res.type("text/xml").send(twiml.toString());
@@ -270,51 +252,53 @@ router.post("/process", async (req, res) => {
             const digitsInInput = userInput.replace(/[^0-9]/g, '');
             if (digitsInInput.length > 0 && digitsInInput.length <= 7) {
                 callData.chassisPartials.push(digitsInInput);
-                callData.chassisAccumulated = callData.chassisPartials.join('');
-                const accumulated = callData.chassisAccumulated;
-                console.log(`   🔢 Chassis chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
-
-                // Repeat back what we heard
                 const spokenDigits = digitsInInput.split('').join(' ');
 
-                if (accumulated.length >= 4 && accumulated.length <= 7) {
-                    // We have enough digits — try API lookup
-                    const fullSpoken = accumulated.split('').join(' ');
-                    const v = await validateMachineNumber(accumulated);
-                    if (v.valid) {
-                        callData.customerData = v.data;
-                        callData.extractedData.machine_no = v.data.machineNo;
-                        callData.extractedData.customer_name = v.data.name;
-                        callData.pendingPhoneConfirm = true;
-                        callData.machineNotFoundCount = 0;
-                        callData.awaitingChassisMore = false;
-                        callData.chassisPartials = [];
-                        callData.chassisAccumulated = '';
-                        console.log(`   ✅ Machine found via accumulated: ${v.data.name}`);
-                        // Fall through to phone confirm step
-                    } else {
-                        callData.machineNotFoundCount++;
-                        console.warn(`   ❌ Machine not found for "${accumulated}" (attempt ${callData.machineNotFoundCount})`);
+                console.log(`   🔢 Chassis chunk: "${digitsInInput}" → partials: [${callData.chassisPartials.join(', ')}]`);
 
-                        if (callData.machineNotFoundCount >= 5) {
-                            // 5 retries done — try phone fallback, then give up
-                            if (callData.callingNumber) {
-                                const pr = callData._phoneData || await findMachineByPhone(callData.callingNumber);
-                                if (pr.valid) {
-                                    callData.customerData = pr.data;
-                                    callData.extractedData.machine_no = pr.data.machineNo;
-                                    callData.extractedData.customer_name = pr.data.name;
-                                    callData.pendingPhoneConfirm = true;
-                                    callData.machineNotFoundCount = 0;
-                                    callData.awaitingChassisMore = false;
-                                    console.log(`   ✅ Phone fallback: ${pr.data.name}`);
-                                    // Fall through
-                                } else {
-                                    sayFinal(twiml, "Chassis number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!");
-                                    twiml.hangup();
-                                    activeCalls.delete(CallSid);
-                                    return res.type("text/xml").send(twiml.toString());
-                                }
+                // Generate all possible variations and try each one
+                const variations = generateChassisVariations(callData.chassisPartials);
+                let foundMachine = null;
+
+                for (const variation of variations) {
+                    if (/^\d{4,7}$/.test(variation)) {
+                        const v = await validateMachineNumber(variation);
+                        if (v.valid) {
+                            foundMachine = { variation, data: v.data };
+                            break;
+                        }
+                    }
+                }
+
+                if (foundMachine) {
+                    callData.customerData = foundMachine.data;
+                    callData.extractedData.machine_no = foundMachine.data.machineNo;
+                    callData.extractedData.customer_name = foundMachine.data.name;
+                    callData.pendingPhoneConfirm = true;
+                    callData.machineNotFoundCount = 0;
+                    callData.awaitingChassisMore = false;
+                    callData.chassisPartials = [];
+                    callData.chassisAccumulated = '';
+                    console.log(`   ✅ Machine found via multi-pass: ${foundMachine.data.name} (variation: ${foundMachine.variation})`);
+                    // Fall through to phone confirm step
+                } else {
+                    callData.machineNotFoundCount++;
+                    callData.chassisAccumulated = callData.chassisPartials.join('');
+                    console.warn(`   ❌ Machine not found in variations: [${variations.join(', ')}] (attempt ${callData.machineNotFoundCount})`);
+
+                    if (callData.machineNotFoundCount >= 5) {
+                        // 5 retries done — try phone fallback, then give up
+                        if (callData.callingNumber) {
+                            const pr = callData._phoneData || await findMachineByPhone(callData.callingNumber);
+                            if (pr.valid) {
+                                callData.customerData = pr.data;
+                                callData.extractedData.machine_no = pr.data.machineNo;
+                                callData.extractedData.customer_name = pr.data.name;
+                                callData.pendingPhoneConfirm = true;
+                                callData.machineNotFoundCount = 0;
+                                callData.awaitingChassisMore = false;
+                                console.log(`   ✅ Phone fallback: ${pr.data.name}`);
+                                // Fall through
                             } else {
                                 sayFinal(twiml, "Chassis number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!");
                                 twiml.hangup();
@@ -322,33 +306,67 @@ router.post("/process", async (req, res) => {
                                 return res.type("text/xml").send(twiml.toString());
                             }
                         } else {
-                            // Reset accumulated and try fresh
-                            callData.chassisPartials = [];
-                            callData.chassisAccumulated = '';
-                            callData.awaitingChassisMore = true;
-                            activeCalls.set(CallSid, callData);
-                            speak(twiml, `Ji, ${fullSpoken} se koi machine nahi mili. Thoda aaram se dobara bataiye chassis number.`);
+                            sayFinal(twiml, "Chassis number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!");
+                            twiml.hangup();
+                            activeCalls.delete(CallSid);
                             return res.type("text/xml").send(twiml.toString());
                         }
+                    } else {
+                        // Ask for more digits
+                        callData.awaitingChassisMore = true;
+                        activeCalls.set(CallSid, callData);
+                        const accumulated = callData.chassisPartials.join('');
+                        speak(twiml, `Ji, ${accumulated.split('').join(' ')}. Aur bhi digits bataiye yi`);
+                        return res.type("text/xml").send(twiml.toString());
                     }
-                } else if (accumulated.length < 4) {
-                    // Need more digits
-                    callData.awaitingChassisMore = true;
-                    activeCalls.set(CallSid, callData);
-                    speak(twiml, `Ji, ${spokenDigits}. Aage ke number bataiye.`);
-                    return res.type("text/xml").send(twiml.toString());
-                } else {
-                    // More than 7 digits — too many, reset
-                    callData.chassisPartials = [];
-                    callData.chassisAccumulated = '';
-                    callData.awaitingChassisMore = true;
-                    activeCalls.set(CallSid, callData);
-                    speak(twiml, "Ji, number zyada ho gaye. Thoda aaram se dobara bataiye chassis number.");
-                    return res.type("text/xml").send(twiml.toString());
                 }
             }
             // If no digits found in input, stop waiting for chassis and continue normal flow
             callData.awaitingChassisMore = false;
+        }
+
+        // ── STEP 1.5.1: Incremental phone number accumulation ────────
+        // If we are waiting for more phone digits, handle that first
+        if (callData.awaitingPhoneMore) {
+            const digitsInInput = userInput.replace(/[^0-9]/g, '');
+            if (digitsInInput.length > 0 && digitsInInput.length <= 10) {
+                callData.phonePartials.push(digitsInInput);
+                callData.phoneAccumulated = callData.phonePartials.join('');
+                const accumulated = callData.phoneAccumulated;
+                console.log(`   📱 Phone chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
+
+                if (accumulated.length === 10 && /^[6-9]/.test(accumulated)) {
+                    if (callData.awaitingAlternatePhone) {
+                        const originalPhone = callData.customerData?.phone || "";
+                        if (originalPhone && originalPhone !== accumulated) {
+                            callData.extractedData.customer_phone = `${originalPhone}, ${accumulated}`;
+                        } else {
+                            callData.extractedData.customer_phone = accumulated;
+                        }
+                        callData.awaitingAlternatePhone = false;
+                    } else {
+                        callData.extractedData.customer_phone = accumulated;
+                    }
+                    callData.phonePartials = [];
+                    callData.phoneAccumulated = '';
+                    callData.awaitingPhoneMore = false;
+                    console.log(`   ✅ Phone collected via chunks: ${accumulated}`);
+                } else if (accumulated.length < 10) {
+                    callData.awaitingPhoneMore = true;
+                    activeCalls.set(CallSid, callData);
+                    speak(twiml, `${accumulated.split('').join(' ')} confirm, aage ke digits bataiye.`);
+                    return res.type("text/xml").send(twiml.toString());
+                } else {
+                    // Invalid accumulated phone, reset
+                    callData.phonePartials = [];
+                    callData.phoneAccumulated = '';
+                    callData.awaitingPhoneMore = false;
+                    speak(twiml, "Phone number galat laga ji. Dobara pura number bataiye.");
+                    return res.type("text/xml").send(twiml.toString());
+                }
+            }
+            // If no digits found in input, stop waiting for phone and continue normal flow
+            callData.awaitingPhoneMore = false;
         }
 
         const rxData = extractAllData(userInput, callData.extractedData);
@@ -463,15 +481,53 @@ router.post("/process", async (req, res) => {
                 callData.extractedData.customer_phone = foundPhone;
                 console.log(`   ✅ Phone changed by direct input: ${foundPhone}`);
             } else {
-                const isChange = /(change|चेंज|badal|badalna|dusra|naya|new|different|alag|no|nahi|nhi|nai)/i.test(lo);
-                if (!isChange && callData.customerData?.phone) {
+                // Check if user wants to change the phone
+                const isChangeRequest = /(change|चेंज|dusra|naya|new|different|alag|no|nahi|nhi|nai)/i.test(lo);
+                // Check if user mentions "badalwana/badalna" (imply change but want to proceed without asking)
+                // IMPORTANT: Support both English transliteration AND Devanagari script
+                const isBadalwana = /(badalwana|badalna|badal|badli|badlwana|फिर से|बदलना|बदल|बदलवाना|बदली|बदलवानी)/i.test(userInput);
+                
+                if (isBadalwana && callData.customerData?.phone) {
+                    // User doesn't want to change, just proceed with existing phone
+                    callData.extractedData.customer_phone = callData.customerData.phone;
+                    console.log(`   ✅ Phone confirmed (बदलवाना): ${callData.customerData.phone}`);
+                } else if (!isChangeRequest && callData.customerData?.phone) {
                     callData.extractedData.customer_phone = callData.customerData.phone;
                     console.log(`   ✅ Phone confirmed: ${callData.customerData.phone}`);
-                } else {
-                    callData.awaitingAlternatePhone = true;
-                    activeCalls.set(CallSid, callData);
-                    speak(twiml, "Theek hai ji, apna dusra number bataiye.");
-                    return res.type("text/xml").send(twiml.toString());
+                } else if (isChangeRequest) {
+                    // Check for chunked phone input
+                    const digitsInInput = userInput.replace(/[^0-9]/g, '');
+                    if (digitsInInput.length > 0 && digitsInInput.length <= 10) {
+                        callData.phonePartials.push(digitsInInput);
+                        callData.phoneAccumulated = callData.phonePartials.join('');
+                        const accumulated = callData.phoneAccumulated;
+                        console.log(`   📱 Phone chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
+
+                        if (accumulated.length === 10 && /^[6-9]/.test(accumulated)) {
+                            callData.extractedData.customer_phone = accumulated;
+                            callData.phonePartials = [];
+                            callData.phoneAccumulated = '';
+                            callData.awaitingPhoneMore = false;
+                            console.log(`   ✅ Phone collected via chunks: ${accumulated}`);
+                        } else if (accumulated.length < 10) {
+                            callData.awaitingPhoneMore = true;
+                            activeCalls.set(CallSid, callData);
+                            speak(twiml, `${accumulated.split('').join(' ')} confirm, aage ke digits bataiye.`);
+                            return res.type("text/xml").send(twiml.toString());
+                        } else {
+                            // Invalid accumulated phone, reset
+                            callData.phonePartials = [];
+                            callData.phoneAccumulated = '';
+                            callData.awaitingPhoneMore = false;
+                            speak(twiml, "Phone number galat laga ji. Dobara pura number bataiye.");
+                            return res.type("text/xml").send(twiml.toString());
+                        }
+                    } else {
+                        callData.awaitingAlternatePhone = true;
+                        activeCalls.set(CallSid, callData);
+                        speak(twiml, "Theek hai ji, apna dusra number bataiye.");
+                        return res.type("text/xml").send(twiml.toString());
+                    }
                 }
             }
         }
@@ -489,11 +545,42 @@ router.post("/process", async (req, res) => {
                 }
                 console.log(`   ✅ Alternate phone saved: ${callData.extractedData.customer_phone}`);
             } else {
-                console.log(`   🔄 No phone found in alternate input`);
-                callData.awaitingAlternatePhone = true;
-                activeCalls.set(CallSid, callData);
-                speak(twiml, "Ji, thoda clearly 10 digit ka mobile number bataiye.");
-                return res.type("text/xml").send(twiml.toString());
+                // Check for chunked phone input
+                const digitsInInput = userInput.replace(/[^0-9]/g, '');
+                if (digitsInInput.length > 0 && digitsInInput.length <= 10) {
+                    callData.phonePartials.push(digitsInInput);
+                    callData.phoneAccumulated = callData.phonePartials.join('');
+                    const accumulated = callData.phoneAccumulated;
+                    console.log(`   📱 Alternate phone chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
+
+                    if (accumulated.length === 10 && /^[6-9]/.test(accumulated)) {
+                        const originalPhone = callData.customerData?.phone || "";
+                        if (originalPhone && originalPhone !== accumulated) {
+                            callData.extractedData.customer_phone = `${originalPhone}, ${accumulated}`;
+                        } else {
+                            callData.extractedData.customer_phone = accumulated;
+                        }
+                        callData.phonePartials = [];
+                        callData.phoneAccumulated = '';
+                        callData.awaitingPhoneMore = false;
+                        console.log(`   ✅ Alternate phone collected via chunks: ${accumulated}`);
+                    } else if (accumulated.length < 10) {
+                        callData.awaitingPhoneMore = true;
+                        activeCalls.set(CallSid, callData);
+                        speak(twiml, `${accumulated.split('').join(' ')} confirm, aage ke digits bataiye.`);
+                        return res.type("text/xml").send(twiml.toString());
+                    } else {
+                        // Invalid accumulated phone, reset
+                        callData.phonePartials = [];
+                        callData.phoneAccumulated = '';
+                        callData.awaitingPhoneMore = false;
+                        speak(twiml, "Phone number galat laga ji. Dobara pura number bataiye.");
+                        return res.type("text/xml").send(twiml.toString());
+                    }
+                } else {
+                    console.log(`   🔄 No phone found in alternate input`);
+                    // If they didn't provide a phone, just continue and let the AI catch it if missing later.
+                }
             }
         }
 
@@ -909,10 +996,12 @@ async function submitComplaint(callData) {
             pincode: "0",
             service_date: "", from_time: "", to_time: "",
         };
-        payload.job_open_lat = data.lat != null ? data.lat : 0;
-        payload.job_open_lng = data.lng != null ? data.lng : 0;
-        payload.job_close_lat = data.lat != null ? data.lat : 0;
-        payload.job_close_lng = data.lng != null ? data.lng : 0;
+        if (data.lat != null && data.lng != null) {
+            payload.job_open_lat = data.lat;
+            payload.job_open_lng = data.lng;
+            payload.job_close_lat = data.lat;
+            payload.job_close_lng = data.lng;
+        }
 
         console.log("📤 Submitting:", JSON.stringify(payload, null, 2));
 

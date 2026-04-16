@@ -1,4 +1,5 @@
 import Groq from 'groq-sdk';
+import { getSideAnswer, getAngryResponse, getIntentResponse } from './knowledgeBase.js';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -78,7 +79,7 @@ function buildSystemPrompt(callData) {
 
     // Determine the single most important next question
     let nextQuestion = "";
-    if (!d.machine_no) nextQuestion = "Ask for chassis/machine number (4-7 digit number).";
+    if (!d.machine_no) nextQuestion = "Ask for chassis/machine number (4-7 digit number). If customer gives in chunks, acknowledge each part and build incrementally.";
     else if (!d.complaint_title) nextQuestion = "Ask what problem the machine has.";
     else if (!d.machine_status) nextQuestion = "Ask: 'Machine bilkul band hai ya problem ke saath chal rahi hai?' — If customer says bilkul band/nahi chal rahi/khadi hai → set machine_status to 'Breakdown'. If customer says chal rahi hai/problem ke saath → set machine_status to 'Running With Problem'.";
     else if (!d.city || !d.city_id) nextQuestion = "Ask which city/shahar they are in; confirm nearest Rajesh Motors service center if needed.";
@@ -101,6 +102,17 @@ Do not use canned reply templates or hardcoded phrases. Always generate natural 
 Understand Hindi, English, Rajasthani, Marwari naturally.
 Reply in Hindi mixed with "ji", "haan ji", "achha ji", "bilkul ji", "theek hai ji".
 Keep replies SHORT — max 12-15 words. Warm, human, not robotic.
+Use Hinglish naturally: "ok ji", "theek hai ji", "acha ji", "bilkul ji"
+Add natural fillers: "sir", "ji", "acha", "theek hai", "samajh gaya"
+Vary responses slightly each time to sound human
+
+=== ANGRY/FRUSTRATED CUSTOMER HANDLING ===
+If customer shows anger/frustration (abuse, complaints about delay, "kab se wait kar raha", "engineer nahi aaya"):
+- ACKNOWLEDGE: "Samajh raha hun ji, aapko kaafi pareshani ho rahi hai"
+- REASSURE: "Main abhi turant check karke solve karwata hun"
+- REDIRECT: Bring back to flow gently
+- NEVER react emotionally or argue
+- Stay calm and professional
 
 === RAJASTHANI / MARWARI UNDERSTANDING ===
 - "band padi / khadi padi / chal nahi ryi / chaalti nai" → machine is in Breakdown
@@ -122,6 +134,22 @@ Customer may say many problems in one breath. Capture ALL of them:
 - Example: "engine start nahi, tel nikal raha, AC nahi, brake kharab"
   → title: "Engine Not Starting"
   → details: "Engine Not Starting; Oil Leakage; AC Not Working; Brake Failure"
+
+=== CHUNKED INPUT HANDLING ===
+For chassis number: If customer says in parts ("33", then "05", then "447"):
+- Acknowledge each chunk: "33 confirm, aage bataiye"
+- Build incrementally: After "3305" say "3305 confirm, last part bataiye"
+- When complete, confirm full number
+
+For phone number: Same logic as chassis - handle chunked input.
+
+=== SMART SKIP LOGIC ===
+If customer gives everything in one sentence:
+"3305447 Jaipur engine problem band padi"
+→ Extract ALL: chassis, city, problem, status
+→ Skip unnecessary questions
+→ Only ask for missing info
+→ If all collected, go to final confirm
 
 === CONVERSATION FLOW ===
 1. If customer says side things (price, engineer, wait time) → answer VERY briefly then ask your NEXT QUESTION
@@ -161,6 +189,18 @@ export async function getSmartAIResponse(callData) {
             for (const [k, v] of Object.entries(rxData)) {
                 if (v && !callData.extractedData[k]) callData.extractedData[k] = v;
             }
+        }
+
+        // Check for angry/frustrated customer
+        const angryResponse = getAngryResponse(lastUserMsg);
+        if (angryResponse) {
+            return { text: angryResponse, extractedData: callData.extractedData, readyToSubmit: false };
+        }
+
+        // Check for side questions
+        const sideAnswer = getSideAnswer(lastUserMsg);
+        if (sideAnswer) {
+            return { text: sideAnswer, extractedData: callData.extractedData, readyToSubmit: false };
         }
 
         // City match
@@ -457,4 +497,82 @@ export function sanitizeExtractedData(data) {
     return c;
 }
 
-export default { getSmartAIResponse, extractAllData, matchServiceCenter, sanitizeExtractedData };
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   📱 PARSE PHONE FROM TEXT
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+export function parsePhoneFromText(text) {
+    if (!text) return null;
+    
+    // Remove common separators and extract all digit sequences
+    const compact = text.replace(/[\s\-,।\.]/g, "");
+    const nums = compact.match(/\d+/g) || [];
+    
+    for (const seq of nums) {
+        // Direct match: 10 digits starting with 6-9
+        if (/^[6-9]\d{9}$/.test(seq)) {
+            return seq;
+        }
+        // Substring match: find 10-digit sequence starting with 6-9
+        for (let i = 0; i <= seq.length - 10; i++) {
+            const ch = seq.slice(i, i + 10);
+            if (/^[6-9]\d{9}$/.test(ch)) {
+                return ch;
+            }
+        }
+    }
+    
+    return null;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   🔢 GENERATE CHASSIS VARIATIONS FOR MULTI-PASS LOOKUP
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+export function generateChassisVariations(chassisPartials) {
+    if (!chassisPartials || chassisPartials.length === 0) return [];
+    
+    // Generate combinations in different orders
+    const variations = [];
+    const n = chassisPartials.length;
+    
+    // 1. Original order: part1 + part2 + part3 + ...
+    variations.push(chassisPartials.join(''));
+    
+    // 2. All contiguous concatenations
+    for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j <= n; j++) {
+            const sub = chassisPartials.slice(i, j).join('');
+            if (!variations.includes(sub) && /^\d{4,7}$/.test(sub)) {
+                variations.push(sub);
+            }
+        }
+    }
+    
+    // 3. Reverse order: part3 + part2 + part1
+    const reversed = [...chassisPartials].reverse().join('');
+    if (!variations.includes(reversed) && /^\d{4,7}$/.test(reversed)) {
+        variations.push(reversed);
+    }
+    
+    // 4. Interleaved combinations (for cases like "30" "87" "05447" taken as individual attempts)
+    // Try each partial individually if within valid range
+    for (const part of chassisPartials) {
+        if (!variations.includes(part) && /^\d{4,7}$/.test(part)) {
+            variations.push(part);
+        }
+    }
+    
+    // 5. Two-way combinations
+    for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+            const combo = chassisPartials[i] + chassisPartials[j];
+            if (!variations.includes(combo) && /^\d{4,7}$/.test(combo)) {
+                variations.push(combo);
+            }
+        }
+    }
+    
+    // Filter to valid chassis lengths and remove duplicates
+    return [...new Set(variations)].filter(v => /^\d{4,7}$/.test(v));
+}
+
+export default { getSmartAIResponse, extractAllData, matchServiceCenter, sanitizeExtractedData, parsePhoneFromText, generateChassisVariations };
