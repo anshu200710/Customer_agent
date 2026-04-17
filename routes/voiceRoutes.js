@@ -24,6 +24,41 @@ function missingField(d) {
     return null;
 }
 
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   📋 SMART SILENCE HANDLER: Context-aware prompts based on what's missing
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function getSmartSilencePrompt(callData) {
+    const d = callData.extractedData;
+    
+    // Check what's missing and ask for it specifically
+    const missing = missingField(d);
+    
+    // If we have a stored last question, use it
+    if (callData.lastQuestion) {
+        return callData.lastQuestion;
+    }
+    
+    // Otherwise, determine what to ask based on missing fields
+    if (missing === "machine_no") {
+        return "Aapka machine number? Bol sakte hain ya phone ke button daba sakte hain.";
+    }
+    if (missing === "complaint_title") {
+        return "Machine mein kya problem hai? Bataiye.";
+    }
+    if (missing === "machine_status") {
+        return "Machine bilkul band hai ya problem ke saath chal rahi hai?";
+    }
+    if (missing === "city") {
+        return "Aap kaunse shahar mein hain? Jaipur, Kota, Ajmer, Udaipur?";
+    }
+    if (missing === "customer_phone") {
+        return "Aapka mobile number? 10 digit ka number bataiye.";
+    }
+    
+    // All fields collected, waiting for final confirmation
+    return "Sab details sahi hain? Haan boliye to complaint register ho jayegi.";
+}
+
 function parsePhoneFromText(text) {
     const extracted = extractAllData(text, { customer_phone: null });
     if (extracted.customer_phone) return extracted.customer_phone;
@@ -151,10 +186,11 @@ router.post("/", async (req, res) => {
             awaitingAlternatePhone: false,
             cityConfirmed: false,
             pendingCityConfirm: false,
-            // Incremental chassis collection
-            chassisPartials: [],        // e.g. ["33", "05", "447"]
-            chassisAccumulated: "",     // e.g. "3305447"
-            awaitingChassisMore: false, // waiting for next chunk
+            // Simple retry logic for machine number
+            machineNumberAttempts: 0,     // 0, 1, 2 (max 3 attempts)
+            // Track conversation state
+            lastQuestion: null,           // Last question asked to user
+            lastAIResponse: null,         // Last AI response for debugging
         };
 
         // Phone-based pre-lookup (silent)
@@ -183,8 +219,9 @@ router.post("/", async (req, res) => {
 
         const greeting = callData.customerData
             ? `Namaste ${callData.customerData.name.split(" ")[0]} ji, kya problem hai?`
-            : "Namaste, Rajesh Motors. Bataiye, kya problem hai?";
+            : "Namaste, Rajesh Motors. Machine number bataiye - bol sakte hain ya phone ke button daba sakte hain.";
 
+        callData.lastQuestion = greeting;  // Track the question
         speak(twiml, greeting);
         res.type("text/xml").send(twiml.toString());
 
@@ -226,7 +263,7 @@ router.post("/process", async (req, res) => {
             return res.type("text/xml").send(twiml.toString());
         }
 
-        // ── Silence handling ────────────────────────────────────────
+        // ── Silence handling (SMART: asks for what's missing) ────────────────────────────────────────
         if (!userInput || userInput.length < 2) {
             callData.silenceCount++;
             const hasData = !!(callData.customerData || callData.extractedData.machine_no);
@@ -236,8 +273,12 @@ router.post("/process", async (req, res) => {
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
             }
-            const silenceReplies = ["Haan?", "Suniye", "Boliye", "Kya hua?", "Bataiye na", "Haan bataiye"];
-            speak(twiml, silenceReplies[Math.min(callData.silenceCount - 1, silenceReplies.length - 1)]);
+            
+            // Use smart prompt based on what's missing
+            const smartPrompt = getSmartSilencePrompt(callData);
+            console.log(`   🔇 Silence #${callData.silenceCount} → Smart prompt: "${smartPrompt}"`);
+            
+            speak(twiml, smartPrompt);
             activeCalls.set(CallSid, callData);
             return res.type("text/xml").send(twiml.toString());
         }
@@ -256,93 +297,7 @@ router.post("/process", async (req, res) => {
         // ── STEP 1: Fast regex extraction ───────────────────────────
         callData.extractedData = sanitizeExtractedData(callData.extractedData);
 
-        // ── STEP 1.5: Incremental chassis number accumulation ────────
-        // If we are waiting for more chassis digits, handle that first
-        if (callData.awaitingChassisMore && !callData.customerData) {
-            const digitsInInput = userInput.replace(/[^0-9]/g, '');
-            if (digitsInInput.length > 0 && digitsInInput.length <= 7) {
-                callData.chassisPartials.push(digitsInInput);
-                callData.chassisAccumulated = callData.chassisPartials.join('');
-                const accumulated = callData.chassisAccumulated;
-                console.log(`   🔢 Chassis chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
-
-                // Repeat back what we heard
-                const spokenDigits = digitsInInput.split('').join(' ');
-
-                if (accumulated.length >= 4 && accumulated.length <= 7) {
-                    // We have enough digits — try API lookup
-                    const fullSpoken = accumulated.split('').join(' ');
-                    const v = await validateMachineNumber(accumulated);
-                    if (v.valid) {
-                        callData.customerData = v.data;
-                        callData.extractedData.machine_no = v.data.machineNo;
-                        callData.extractedData.customer_name = v.data.name;
-                        callData.pendingPhoneConfirm = true;
-                        callData.machineNotFoundCount = 0;
-                        callData.awaitingChassisMore = false;
-                        callData.chassisPartials = [];
-                        callData.chassisAccumulated = '';
-                        console.log(`   ✅ Machine found via accumulated: ${v.data.name}`);
-                        // Fall through to phone confirm step
-                    } else {
-                        callData.machineNotFoundCount++;
-                        console.warn(`   ❌ Machine not found for "${accumulated}" (attempt ${callData.machineNotFoundCount})`);
-
-                        if (callData.machineNotFoundCount >= 5) {
-                            // 5 retries done — try phone fallback, then give up
-                            if (callData.callingNumber) {
-                                const pr = callData._phoneData || await findMachineByPhone(callData.callingNumber);
-                                if (pr.valid) {
-                                    callData.customerData = pr.data;
-                                    callData.extractedData.machine_no = pr.data.machineNo;
-                                    callData.extractedData.customer_name = pr.data.name;
-                                    callData.pendingPhoneConfirm = true;
-                                    callData.machineNotFoundCount = 0;
-                                    callData.awaitingChassisMore = false;
-                                    console.log(`   ✅ Phone fallback: ${pr.data.name}`);
-                                    // Fall through
-                                } else {
-                                    sayFinal(twiml, "Chassis number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!");
-                                    twiml.hangup();
-                                    activeCalls.delete(CallSid);
-                                    return res.type("text/xml").send(twiml.toString());
-                                }
-                            } else {
-                                sayFinal(twiml, "Chassis number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!");
-                                twiml.hangup();
-                                activeCalls.delete(CallSid);
-                                return res.type("text/xml").send(twiml.toString());
-                            }
-                        } else {
-                            // Reset accumulated and try fresh
-                            callData.chassisPartials = [];
-                            callData.chassisAccumulated = '';
-                            callData.awaitingChassisMore = true;
-                            activeCalls.set(CallSid, callData);
-                            speak(twiml, `Ji, ${fullSpoken} se koi machine nahi mili. Thoda aaram se dobara bataiye chassis number.`);
-                            return res.type("text/xml").send(twiml.toString());
-                        }
-                    }
-                } else if (accumulated.length < 4) {
-                    // Need more digits
-                    callData.awaitingChassisMore = true;
-                    activeCalls.set(CallSid, callData);
-                    speak(twiml, `Ji, ${spokenDigits}. Aage ke number bataiye.`);
-                    return res.type("text/xml").send(twiml.toString());
-                } else {
-                    // More than 7 digits — too many, reset
-                    callData.chassisPartials = [];
-                    callData.chassisAccumulated = '';
-                    callData.awaitingChassisMore = true;
-                    activeCalls.set(CallSid, callData);
-                    speak(twiml, "Ji, number zyada ho gaye. Thoda aaram se dobara bataiye chassis number.");
-                    return res.type("text/xml").send(twiml.toString());
-                }
-            }
-            // If no digits found in input, stop waiting for chassis and continue normal flow
-            callData.awaitingChassisMore = false;
-        }
-
+        // ── STEP 1: Extract data from user input ────────────────────
         const rxData = extractAllData(userInput, callData.extractedData);
         for (const [k, v] of Object.entries(rxData)) {
             if (v && !callData.extractedData[k]) callData.extractedData[k] = v;
@@ -385,48 +340,62 @@ router.post("/process", async (req, res) => {
         // ── STEP 3: machine_status is now collected by AI question ───
         // No auto-guessing — AI asks "Machine bilkul band hai ya problem ke saath chal rahi hai?"
 
-        // ── STEP 4: Machine number lookup ───────────────────────────
+        // ── STEP 4: Machine number lookup with simple 2-try + DTMF fallback ───────────────────────────
         if (!callData.customerData && callData.extractedData.machine_no) {
             const v = await validateMachineNumber(callData.extractedData.machine_no);
             if (v.valid) {
                 callData.customerData = v.data;
                 callData.extractedData.customer_name = v.data.name;
                 callData.pendingPhoneConfirm = true;
-                callData.machineNotFoundCount = 0;
-                callData.awaitingChassisMore = false;
-                callData.chassisPartials = [];
-                callData.chassisAccumulated = '';
+                callData.machineNumberAttempts = 0; // Reset on success
                 console.log(`   ✅ Machine found: ${v.data.name}`);
             } else {
-                callData.machineNotFoundCount++;
+                callData.machineNumberAttempts++;
                 callData.extractedData.machine_no = null;
-                console.warn(`   ❌ Machine not found (attempt ${callData.machineNotFoundCount})`);
+                console.warn(`   ❌ Machine not found (attempt ${callData.machineNumberAttempts}/3)`);
 
-                // On 3rd failed attempt, try phone fallback
-                if (callData.machineNotFoundCount === 3 && callData.callingNumber) {
-                    const pr = callData._phoneData || await findMachineByPhone(callData.callingNumber);
-                    if (pr.valid) {
-                        callData.customerData = pr.data;
-                        callData.extractedData.machine_no = pr.data.machineNo;
-                        callData.extractedData.customer_name = pr.data.name;
-                        callData.pendingPhoneConfirm = true;
-                        callData.machineNotFoundCount = 0;
-                        callData.awaitingChassisMore = false;
-                        console.log(`   ✅ Phone fallback: ${pr.data.name}`);
+                // Attempt 1: Try again with speech
+                if (callData.machineNumberAttempts === 1) {
+                    const prompt = "Number sahi nahi mila. Dobara bataiye - ek ek number dhire dhire boliye.";
+                    callData.lastQuestion = prompt;
+                    activeCalls.set(CallSid, callData);
+                    speak(twiml, prompt);
+                    return res.type("text/xml").send(twiml.toString());
+                }
+                
+                // Attempt 2: Try phone fallback, then ask for DTMF
+                if (callData.machineNumberAttempts === 2) {
+                    // Try phone fallback first
+                    if (callData.callingNumber) {
+                        const pr = callData._phoneData || await findMachineByPhone(callData.callingNumber);
+                        if (pr.valid) {
+                            callData.customerData = pr.data;
+                            callData.extractedData.machine_no = pr.data.machineNo;
+                            callData.extractedData.customer_name = pr.data.name;
+                            callData.pendingPhoneConfirm = true;
+                            callData.machineNumberAttempts = 0;
+                            console.log(`   ✅ Phone fallback: ${pr.data.name}`);
+                            // Fall through to phone confirm
+                        } else {
+                            // Phone fallback failed, ask for DTMF
+                            const prompt = "Thoda mushkil ho raha hai. Kripya apne phone ke button dabaye - machine number type karein.";
+                            callData.lastQuestion = prompt;
+                            activeCalls.set(CallSid, callData);
+                            speak(twiml, prompt);
+                            return res.type("text/xml").send(twiml.toString());
+                        }
+                    } else {
+                        // No phone to try, ask for DTMF
+                        const prompt = "Thoda mushkil ho raha hai. Kripya apne phone ke button dabaye - machine number type karein.";
+                        callData.lastQuestion = prompt;
+                        activeCalls.set(CallSid, callData);
+                        speak(twiml, prompt);
+                        return res.type("text/xml").send(twiml.toString());
                     }
                 }
 
-                // If still not found, start incremental chassis mode
-                if (!callData.customerData && callData.machineNotFoundCount < 5) {
-                    callData.awaitingChassisMore = true;
-                    callData.chassisPartials = [];
-                    callData.chassisAccumulated = '';
-                    activeCalls.set(CallSid, callData);
-                    speak(twiml, `Ji, yeh chassis number nahi mila. Thoda aaram se bataiye, pehle 2-3 number bataiye, main repeat karungi.`);
-                    return res.type("text/xml").send(twiml.toString());
-                }
-
-                if (callData.machineNotFoundCount >= 5) {
+                // Attempt 3+: Give up and escalate
+                if (callData.machineNumberAttempts >= 3) {
                     sayFinal(twiml, "Chassis number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!");
                     twiml.hangup();
                     activeCalls.delete(CallSid);
@@ -645,6 +614,29 @@ router.post("/process", async (req, res) => {
         }
 
         const aiResp = await getSmartAIResponse(callData);
+        
+        // Store AI response for debugging and fallback
+        callData.lastAIResponse = aiResp.text;
+        
+        // Validate AI response quality - must have a question or clear instruction
+        const isGoodResponse = aiResp.text && (
+            aiResp.text.includes("?") || 
+            aiResp.text.includes("bataiye") || 
+            aiResp.text.includes("boliye") ||
+            aiResp.text.includes("chahiye") ||
+            aiResp.text.length > 15
+        );
+        
+        if (!isGoodResponse) {
+            console.warn(`   ⚠️ AI response too short or unclear: "${aiResp.text}"`);
+            // Use smart fallback based on what's missing
+            const fallbackPrompt = getSmartSilencePrompt(callData);
+            aiResp.text = fallbackPrompt;
+            console.log(`   🔄 Using fallback: "${fallbackPrompt}"`);
+        }
+        
+        // Track the question being asked
+        callData.lastQuestion = aiResp.text;
 
         // Merge AI-extracted data
         if (aiResp.extractedData) {
@@ -667,10 +659,12 @@ router.post("/process", async (req, res) => {
         // Check again after AI — but route through final confirm if now complete
         const stillMissing = missingField(callData.extractedData);
         if (!stillMissing && machineValidated) {
+            const finalQuestion = "Ji. Aur koi problem toh nahi machine mein? Save kar dun complaint?";
             callData.awaitingFinalConfirm = true;
+            callData.lastQuestion = finalQuestion;
             callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
             activeCalls.set(CallSid, callData);
-            speak(twiml, "Ji. Aur koi problem toh nahi machine mein? Save kar dun complaint?");
+            speak(twiml, finalQuestion);
             return res.type("text/xml").send(twiml.toString());
         }
 
@@ -678,6 +672,7 @@ router.post("/process", async (req, res) => {
         if (aiResp.readyToSubmit && !machineValidated) {
             console.warn(`   ⛔ AI said ready but machine NOT validated — blocking submit`);
             aiResp.text = "Machine number nahi mila ji. Sahi chassis number bataiye.";
+            callData.lastQuestion = aiResp.text;
             aiResp.readyToSubmit = false;
         }
 
@@ -688,7 +683,8 @@ router.post("/process", async (req, res) => {
             const id = result.sapId || result.jobId || "";
             
             if (id) {
-                sayFinal(twiml, `Humne aapki complaint register kar di hai ji. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
+                const idFormatted = formatNumberForTTS(id);
+                sayFinal(twiml, `Humne aapki complaint register kar di hai ji. Number hai ${idFormatted}. Engineer jaldi contact karega. Dhanyavaad!`);
             } else {
                 sayFinal(twiml, "Humne aapki complaint register kar di hai ji. Engineer jaldi contact karega. Dhanyavaad!");
             }
