@@ -500,7 +500,17 @@ router.post("/process", async (req, res) => {
         if (callData.pendingCityConfirm) {
             callData.pendingCityConfirm = false;
             callData.awaitingCityConfirm = true;
-            const prompt = `${callData.extractedData.branch} mein ${callData.extractedData.city} aapka near city rahegi?`;
+            
+            // Build clear, natural confirmation prompt
+            let prompt;
+            if (callData.extractedData.city === callData.extractedData.branch) {
+                // Same city and branch - simple confirmation
+                prompt = `${callData.extractedData.city} branch sahi hai? Haan ya nahi boliye.`;
+            } else {
+                // Different city and branch - explain which branch will serve
+                prompt = `Aapki machine ${callData.extractedData.city} mein hai? ${callData.extractedData.branch} branch se engineer aayega. Theek hai?`;
+            }
+            
             callData.lastQuestion = prompt;
             console.log(`   🗺️  City confirmation prompt - ${callData.extractedData.city} → ${callData.extractedData.branch}`);
             activeCalls.set(CallSid, callData);
