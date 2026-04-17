@@ -399,11 +399,8 @@ export function getConfusedResponse(callData) {
   const step = callData.step || '';
   const hints = {
     ask_machine_no: [
-      "Main aapki JCB machine ka number maang raha hoon. " +
-      "Machine par ek 4 se 8 digit ka number hota hai. " +
-      "Woh number ek ek karke boliye. Jaise: 3, 3, 0, 5, 4, 4, 7.",
-      "Machine ke upar ya side mein ek plate hoti hai jisme number likha hota hai. " +
-      "Woh number boliye — sirf digits, ek ek karke.",
+      "Machine ka number chahiye. 4 se 7 digit ka number hota hai.",
+      "Machine par likha number bataiye.",
     ],
     confirm_customer: [
       `Humhare system mein ${callData.customerData?.name || 'ek naam'} aur ` +
@@ -479,7 +476,7 @@ export function getIdentityResponse(callData) {
   const identityIntro = "Main Rajesh Motors se JCB ki sahayak AI agent Priya bol rahi hoon. ";
   
   if (step === 'ask_machine_no') {
-    return identityIntro + "Aapki complaint register karne ke liye mujhe aapki machine ka number chahiye. Kripya apna machine number batayein.";
+    return identityIntro + "Aapki complaint register karne ke liye machine number chahiye. Machine number bataiye.";
   } else if (step === 'ask_complaint') {
     return identityIntro + "Main aapki machine ki taklif system mein darj kar rahi hoon. " + (callData.lastQuestion || "");
   } else if (step === 'ask_phone') {
@@ -496,11 +493,10 @@ export function getIdentityResponse(callData) {
 export const SMART_PROMPTS = {
 
   ask_machine_no: [
-    "Kripya apna machine number boliye, ek-ek number saaf aawaz mein. Jaise: 3 3 0 5 4 4 7.",
-    "Kripya machine par likha number boliye. Yeh 4 se 8 anko ka number hota hai.",
-    "Aap ek-ek ankh dhire dhire boliye. Jaise: teen, teen, shunya, paanch, chaar, chaar, saat.",
-    "Apni JCB machine ka number batayein. Yeh machine ke side mein plate par likha hota hai.",
-    "Kripya sirf machine ka number boliye, ek-ek ankh shuru se boliye.",
+    "Machine number bataiye.",
+    "Aapka machine number?",
+    "Machine ka number boliye.",
+    "JCB machine ka number bataiye.",
   ],
 
   confirm_customer: (name, city) => [
