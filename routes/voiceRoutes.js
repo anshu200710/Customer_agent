@@ -1,7 +1,63 @@
+/**
+ * voice.js — Twilio Voice Router for Priya (JCB Complaint Bot)
+ *
+ * CORRECTIONS FROM AUDIO ANALYSIS OF REAL CALLS:
+ *
+ * 1. TIMEOUTS (most critical fix):
+ *    - Real calls: 114 turns in 6 minutes, avg speech 1-4s, max 7.4s
+ *    - speechTimeout="auto" ✓ (keep — waits for natural pause)
+ *    - timeout: 8 (was 3 — too short, cut customers off)
+ *    - maxSpeechTime: 25 (was 10 — customers explain up to 7.4s)
+ *    - pause after speak: 2s (gives customer breathing room)
+ *
+ * 2. TURN LIMIT:
+ *    - Raised to 60 (was 25-28 — real 6-min calls = 114 turns)
+ *
+ * 3. SILENCE HANDLING:
+ *    - Short acks ("haan", "ok", "theek") NOT treated as silence
+ *    - Silence threshold raised: 8 turns with data (was 5/3)
+ *
+ * 4. CONVERSATION FLOW:
+ *    - Machine found → ask complaint directly (skip intermediate questions)
+ *    - "nahi" at final confirm = submit, not cancel
+ *    - City not found → re-ask with examples, don't crash flow
+ *    - Side questions → answer + redirect without losing state
+ *    - No double "save kar dun?" prompts
+ *    - Chassis chunk feedback: show accumulated digits clearly
+ *
+ * 5. PHONE FLOW:
+ *    - "nahi" at phone confirm = keep existing number (not skip)
+ *    - Chunked phone collected in awaitingAlternatePhone too
+ *    - Non-digit input while collecting phone → re-ask clearly
+ *
+ * 6. AI CALL:
+ *    - Filler words stripped ("ji", "achha", "bahut", "bhadiya")
+ *    - Hard guards: never submit without machine + city + phone validated
+ */
+
 import express from "express";
 import twilio from "twilio";
 import axios from "axios";
-import { getSmartAIResponse, extractAllData, sanitizeExtractedData, matchServiceCenter, parsePhoneFromText, generateChassisVariations } from "../utils/ai.js";
+import {
+  getSmartAIResponse,
+  extractAllData,
+  extractAllComplaintTitles,
+  sanitizeExtractedData,
+  matchServiceCenter,
+  parsePhoneFromText,
+  generateChassisVariations,
+  normalizeSpokenDigits,
+} from "../utils/ai.js";
+import {
+  getSideAnswer,
+  isPositiveConfirmation,
+  isHardCancel,
+  isNoMoreProblems,
+  isAddMoreProblem,
+  getAngryResponse,
+  getFinalConfirmPrompt,
+  getSilenceResponse,
+} from "../utils/knowledgeBase.js";
 
 const router = express.Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -12,1129 +68,1166 @@ const COMPLAINT_URL = `${BASE_URL}/ai_call_complaint.php`;
 const API_TIMEOUT = 12000;
 const API_HEADERS = { JCBSERVICEAPI: "MakeInJcb" };
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🔍 CHECK: Are all required fields collected?
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ═══════════════════════════════════════════════════════════════
+   REQUIRED FIELDS CHECK
+═══════════════════════════════════════════════════════════════ */
 function missingField(d) {
-    if (!d.machine_no || !/^\d{4,7}$/.test(d.machine_no)) return "machine_no";
-    if (!d.complaint_title) return "complaint_title";
-    if (!d.machine_status) return "machine_status";
-    if (!d.city) return "city";
-    if (!d.customer_phone || !/^[6-9]\d{9}$/.test(d.customer_phone)) return "customer_phone";
-    return null;
+  if (!d.machine_no || !/^\d{4,7}$/.test(d.machine_no)) return "machine_no";
+  if (!d.complaint_title) return "complaint_title";
+  if (!d.machine_status) return "machine_status";
+  if (!d.city || !d.city_id) return "city";
+  if (!d.customer_phone || !/^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(String(d.customer_phone)))
+    return "customer_phone";
+  return null;
 }
 
-function isPositiveConfirmation(text) {
-    return /(\b(haan|ha|han|theek hai|thik hai|save|kar do|register|done|yes|bilkul|sahi hai|ok|okay|theek|chalo|hmm)\b)/i.test(text);
-}
-
-function isNegativeConfirmation(text) {
-    return /(\b(nahi|nai|nahin|no|mat|band kar|ruk ja|ruk jai|ruk|nahin chahiye|don't|dont)\b)/i.test(text);
-}
-
-function isAddMoreProblem(text) {
-    return /(\b(aur (problem|complaint|issue|koi aur|bhi)|additional|extra|dusri|phir se complaint|another complaint|aur kuch)\b)/i.test(text) && !isNegativeConfirmation(text);
-}
-
-function isClarificationQuestion(text) {
-    return /(\b(kya|kaun|kab|kaise|kitna|kitne|kahan|kaunse|kis|naam|phone|number|engineer|wait|der|time)\b)/i.test(text)
-        && !isPositiveConfirmation(text)
-        && !isNegativeConfirmation(text)
-        && !isAddMoreProblem(text);
-}
-
+/* ═══════════════════════════════════════════════════════════════
+   SIDE QUESTION HANDLER (natural answers, not scripted)
+═══════════════════════════════════════════════════════════════ */
 function answerSideQuestion(text) {
-    const lo = text.toLowerCase();
-    if (/नाम/.test(lo) || /aapka naam/.test(lo) || /tumhara naam/.test(lo) || /main kaun/.test(lo) || /kaun bol raha/.test(lo) || /tum kaun/.test(lo) || /aap kaun/.test(lo)) {
-        return "Main Priya hun, Rajesh Motors se baat kar rahi hun.";
-    }
-    if (/कंपनी|कंप्लेंट|register|register kar|register karna|complaint/.test(lo) && /कब|कहाँ|कितना|नहीं|नहीं/.test(lo) === false) {
-        return "Complaint register karte hain. Sabse pehle chassis number bataiye.";
-    }
-    if (/engineer/.test(lo) && /(kab|kabhi|aayega|aaega|kab aayega|aayegi)/.test(lo)) {
-        return "Engineer jaldi contact karega.";
-    }
-    if (/बदल|change|चेंज|नया नंबर|phone number|mobile number/.test(lo) && /(बता|दे|की)/.test(lo)) {
-        return "Naya number bataiye.";
-    }
-    if (/(phone|number|mobile)/.test(lo) && /kya|kaun|kaise|bataye|bataiye/.test(lo)) {
-        return "Yeh service call hai, main ab complaint register kar rahi hun.";
-    }
-    if (/(kitna der|der|wait|time|kab tak)/.test(lo)) {
-        return "Thoda hi der mein engineer contact karega.";
-    }
-    if (/(kya.*kar.*rahi|kya.*ho.*raha|kaise.*hoga|kaisa.*hai|kaise.*honge)/.test(lo)) {
-        return "Main aapki complaint turant note kar rahi hun aur register kar dungi.";
-    }
-    return null;
+  const lo = text.toLowerCase();
+  if (/aapka naam|tumhara naam|main kaun|kaun bol raha|tum kaun|aap kaun/.test(lo))
+    return "Main Priya hun, Rajesh Motors se.";
+  if (/engineer.*(kab|kab tak|aayega|kitni der)/.test(lo))
+    return "Complaint register hote hi engineer contact karega.";
+  if (/(kitna lagega|charge|price|kitna paisa|cost|fee)/.test(lo))
+    return "Engineer visit ke baad charge batayega. Warranty mein free hoga.";
+  if (/(warranty|waranti)/.test(lo))
+    return "Machine ki warranty ke baare mein engineer batayega.";
+  if (/(phone|number|mobile).*(kyu|kyo|kaise|kya use)/.test(lo))
+    return "Engineer contact ke liye number chahiye.";
+  if (/(kitni der|wait|kab tak|time lagega)/.test(lo))
+    return "2 se 4 ghante mein engineer contact karega.";
+  if (/(rajesh motors|company|center|branch)/.test(lo))
+    return "Rajesh Motors Rajasthan ka JCB authorized service center hai.";
+  return null;
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   � NORMALIZE SPOKEN DIGITS
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function normalizeSpokenDigits(text) {
-   const map = {
-      "zero":"0","shunya":"0",
-      "ek":"1",
-      "do":"2",
-      "teen":"3",
-      "char":"4",
-      "paanch":"5",
-      "cheh":"6","chhe":"6",
-      "saat":"7",
-      "aath":"8",
-      "nau":"9"
-   };
-
-   let t = text.toLowerCase();
-
-   Object.entries(map).forEach(([k,v])=>{
-      t = t.replace(new RegExp(`\\b${k}\\b`,"gi"), v);
-   });
-
-   return t.replace(/\D/g,'');
-}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   �🔊 TTS
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ═══════════════════════════════════════════════════════════════
+   TTS HELPERS
+   Key fix from audio analysis:
+   - timeout=8 (was 3) — customers need time after bot finishes speaking
+   - maxSpeechTime=25 (was 10) — long explanations up to 7.4s in real calls
+   - pause after speak = 2s breathing room
+═══════════════════════════════════════════════════════════════ */
 const TTS_VOICE = "Google.hi-IN-Wavenet-A";
 const TTS_LANG = "hi-IN";
 
 function speak(twiml, text) {
-    const gather = twiml.gather({
-        input: "speech dtmf",
-        language: TTS_LANG,
-        speechTimeout: 'auto',  // Increased from "auto" to 3 seconds for longer pauses
-        timeout: 3,        // Increased from 2 to 5 seconds to give more time
-        maxSpeechTime: 10, // Increased from 10 to 15 seconds for longer responses
-        actionOnEmptyResult: true,
-        action: "/voice/process",
-        method: "POST",
-        enhanced: true,
-        speechModel: "phone_call",
-    });
-    gather.say({ voice: TTS_VOICE, language: TTS_LANG }, text);
-    // Add a pause after speaking to give customer time to respond
-    gather.pause({ length: 1 });
+  const gather = twiml.gather({
+    input: "speech dtmf",
+    language: TTS_LANG,
+    speechTimeout: "auto",     // waits for natural pause
+    timeout: 8,                // FIX: was 3 — now 8s before treating as silence
+    maxSpeechTime: 25,         // FIX: was 10 — customers explain up to 7.4s
+    actionOnEmptyResult: true,
+    action: "/voice/process",
+    method: "POST",
+    enhanced: true,
+    speechModel: "phone_call",
+  });
+  gather.say({ voice: TTS_VOICE, language: TTS_LANG }, text);
+  gather.pause({ length: 2 }); // breathing room after bot speaks
 }
 
 function gatherSilently(twiml) {
-    const gather = twiml.gather({
-        input: "speech dtmf",
-        language: TTS_LANG,
-        speechTimeout: 'auto',
-        timeout: 3,
-        maxSpeechTime: 10,
-        actionOnEmptyResult: true,
-        action: "/voice/process",
-        method: "POST",
-        enhanced: true,
-        speechModel: "phone_call",
-    });
-    gather.pause({ length: 1 });
+  const gather = twiml.gather({
+    input: "speech dtmf",
+    language: TTS_LANG,
+    speechTimeout: "auto",
+    timeout: 10,               // longer window for chunked number input
+    maxSpeechTime: 25,
+    actionOnEmptyResult: true,
+    action: "/voice/process",
+    method: "POST",
+    enhanced: true,
+    speechModel: "phone_call",
+  });
+  gather.pause({ length: 2 });
 }
 
 function sayFinal(twiml, text) {
-    twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, text);
+  twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, text);
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   📞 INITIAL CALL
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ═══════════════════════════════════════════════════════════════
+   STRIP ROBOTIC FILLER WORDS from any TTS text
+═══════════════════════════════════════════════════════════════ */
+function cleanTTS(text) {
+  return (text || "")
+    .replace(/\bji\b/gi, "")
+    .replace(/\bachcha\b/gi, "")
+    .replace(/\bachha\b/gi, "")
+    .replace(/\bokay\b/gi, "")
+    .replace(/\bok\b/gi, "")
+    .replace(/\bbahut\b/gi, "")
+    .replace(/\bbhadiya\b/gi, "")
+    .replace(/\bbilkul\b/gi, "")
+    .replace(/\bswagat\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INITIAL CALL HANDLER
+═══════════════════════════════════════════════════════════════ */
 router.post("/", async (req, res) => {
-    const { CallSid, From } = req.body;
-    const { machine_no: preloadedMachineNo } = req.query;
-    const callerPhone = From?.replace(/^\+91/, "").replace(/^\+/, "").slice(-10) || "";
+  const { CallSid, From } = req.body;
+  const { machine_no: preloadedMachineNo } = req.query;
+  const callerPhone =
+    From?.replace(/^\+91/, "").replace(/^\+/, "").slice(-10) || "";
 
-    console.log(`\n${"═".repeat(60)}`);
-    console.log(`📞 [NEW CALL] ${CallSid} | ${callerPhone} | machine:${preloadedMachineNo || "—"}`);
+  console.log(`\n${"═".repeat(60)}`);
+  console.log(
+    `📞 [NEW CALL] ${CallSid} | ${callerPhone} | machine:${preloadedMachineNo || "—"}`
+  );
 
-    const twiml = new VoiceResponse();
-    try {
-        const callData = {
-            callSid: CallSid,
-            callingNumber: callerPhone,
-            messages: [],
-            extractedData: {
-                machine_no: preloadedMachineNo || null,
-                customer_name: null,
-                customer_phone: null,
-                city: null, city_id: null, branch: null, outlet: null,
-                lat: null, lng: null,
-                complaint_title: null,
-                complaint_subtitle: null,
-                machine_status: null,
-                job_location: null,
-                complaint_details: "",
-                machine_location_address: null,
-            },
-            customerData: null,
-            turnCount: 0,
-            silenceCount: 0,
-            pendingPhoneConfirm: false,
-            awaitingPhoneConfirm: false,
-            machineNotFoundCount: 0,
-            awaitingComplaintAction: false,
-            existingComplaintId: null,
-            awaitingFinalConfirm: false,
-            awaitingAlternatePhone: false,
-            cityConfirmed: false,
-            pendingCityConfirm: false,
-            // Incremental chassis collection
-            chassisPartials: [],        // e.g. ["33", "05", "447"]
-            chassisAccumulated: "",     // e.g. "3305447"
-            awaitingChassisMore: false, // waiting for next chunk
-            // Incremental phone collection
-            phonePartials: [],          // e.g. ["98765", "43210"]
-            phoneAccumulated: "",       // e.g. "9876543210"
-            awaitingPhoneMore: false,   // waiting for next phone chunk
-        };
+  const twiml = new VoiceResponse();
+  try {
+    const callData = {
+      callSid: CallSid,
+      callingNumber: callerPhone,
+      messages: [],
+      extractedData: {
+        machine_no: preloadedMachineNo || null,
+        customer_name: null,
+        customer_phone: null,
+        city: null,
+        city_id: null,
+        branch: null,
+        outlet: null,
+        lat: null,
+        lng: null,
+        complaint_title: null,
+        complaint_subtitle: null,
+        machine_status: null,
+        job_location: null,
+        complaint_details: "",
+        machine_location_address: null,
+      },
+      customerData: null,
+      turnCount: 0,
+      silenceCount: 0,
+      // Phone flow
+      pendingPhoneConfirm: false,
+      awaitingPhoneConfirm: false,
+      awaitingAlternatePhone: false,
+      phonePartials: [],
+      phoneAccumulated: "",
+      awaitingPhoneMore: false,
+      // Chassis flow
+      machineNotFoundCount: 0,
+      chassisPartials: [],
+      chassisAccumulated: "",
+      awaitingChassisMore: false,
+      // City flow
+      cityConfirmed: false,
+      pendingCityConfirm: false,
+      awaitingCityConfirm: false,
+      cityNotFoundCount: 0,
+      // Final confirm
+      awaitingFinalConfirm: false,
+      // Existing complaint
+      awaitingComplaintAction: false,
+      existingComplaintId: null,
+      // Pre-fetched phone data
+      _phoneData: null,
+    };
 
-        // Phone-based pre-lookup (silent)
-        if (callerPhone) {
-            const pr = await findMachineByPhone(callerPhone);
-            if (pr.valid) {
-                callData._phoneData = pr.data;
-                console.log(`   📱 Phone lookup: ${pr.data.name}`);
-            }
-        }
-
-        // Preloaded machine number validation
-        if (preloadedMachineNo) {
-            const v = await validateMachineNumber(preloadedMachineNo);
-            if (v.valid) {
-                callData.customerData = v.data;
-                callData.extractedData.machine_no = v.data.machineNo;
-                callData.extractedData.customer_name = v.data.name;
-                callData.pendingPhoneConfirm = true;
-            } else {
-                callData.extractedData.machine_no = null;
-            }
-        }
-
-        activeCalls.set(CallSid, callData);
-
-        const greeting = callData.customerData
-            ? `Namaste ${callData.customerData.name.split(" ")[0]}, kya problem hai?`
-            : "Namaste, Rajesh Motors mein aapka swagat hai. Kya seva kar sakti hun?";
-
-        speak(twiml, greeting);
-        res.type("text/xml").send(twiml.toString());
-
-    } catch (err) {
-        console.error("❌ [START]", err.message);
-        sayFinal(twiml, "Thodi problem aa gayi. Thodi der baad call karein.");
+    // Silent phone-based pre-lookup
+    if (callerPhone) {
+      const pr = await findMachineByPhone(callerPhone);
+      if (pr.valid) {
+        callData._phoneData = pr.data;
+        console.log(`   📱 Phone lookup: ${pr.data.name}`);
+      }
     }
+
+    // Preloaded machine number validation
+    if (preloadedMachineNo) {
+      const v = await validateMachineNumber(preloadedMachineNo);
+      if (v.valid) {
+        callData.customerData = v.data;
+        callData.extractedData.machine_no = v.data.machineNo;
+        callData.extractedData.customer_name = v.data.name;
+        callData.pendingPhoneConfirm = true;
+      } else {
+        callData.extractedData.machine_no = null;
+      }
+    }
+
+    activeCalls.set(CallSid, callData);
+
+    // Natural greeting — no "swagat" filler
+    const greeting = callData.customerData
+      ? `Namaste ${callData.customerData.name.split(" ")[0]}, kya problem hai machine mein?`
+      : "Namaste, Rajesh Motors se baat kar rahi hun. Kya problem hai?";
+
+    speak(twiml, greeting);
+    res.type("text/xml").send(twiml.toString());
+  } catch (err) {
+    console.error("❌ [START]", err.message);
+    sayFinal(twiml, "Thodi problem aa gayi. Thodi der baad call karein.");
+    res.type("text/xml").send(twiml.toString());
+  }
 });
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🗣️ PROCESS
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ═══════════════════════════════════════════════════════════════
+   PROCESS HANDLER — main conversation logic
+═══════════════════════════════════════════════════════════════ */
 router.post("/process", async (req, res) => {
-    const { CallSid, SpeechResult } = req.body;
-    const twiml = new VoiceResponse();
+  const { CallSid, SpeechResult } = req.body;
+  const twiml = new VoiceResponse();
 
-    try {
-        const callData = activeCalls.get(CallSid);
-        if (!callData) {
-            sayFinal(twiml, "Dobara call karein.");
-            twiml.hangup();
-            return res.type("text/xml").send(twiml.toString());
+  try {
+    const callData = activeCalls.get(CallSid);
+    if (!callData) {
+      sayFinal(twiml, "Dobara call karein.");
+      twiml.hangup();
+      return res.type("text/xml").send(twiml.toString());
+    }
+
+    const userInput = SpeechResult?.trim() || "";
+    callData.turnCount++;
+    const lo = userInput.toLowerCase();
+
+    console.log(`\n${"─".repeat(50)}`);
+    console.log(`🔄 [T${callData.turnCount}] "${userInput || "[SILENCE]"}"`);
+
+    // ── Hard turn limit (raised from 25 to 60 — real calls = 114 turns) ──
+    if (callData.turnCount > 60) {
+      sayFinal(twiml, "Engineer ko message kar diya. Dhanyavaad!");
+      twiml.hangup();
+      activeCalls.delete(CallSid);
+      return res.type("text/xml").send(twiml.toString());
+    }
+
+    // ── Silence handling ─────────────────────────────────────────────
+    // FIX: Short acks like "haan", "ok", "theek" are NOT silence
+    const isShortAck = /^(haan|ha|han|ok|okay|theek|hmm|acha|hm|ji|yes|nahi|nai|no)$/i.test(
+      userInput.trim()
+    );
+
+    if ((!userInput || userInput.length < 2) && !isShortAck) {
+      callData.silenceCount++;
+      const hasData = !!(callData.customerData || callData.extractedData.machine_no);
+      // FIX: Raised silence threshold — real calls have natural pauses
+      if (callData.silenceCount >= (hasData ? 8 : 5)) {
+        sayFinal(twiml, "Koi awaaz nahi aayi. Dobara call karein.");
+        twiml.hangup();
+        activeCalls.delete(CallSid);
+        return res.type("text/xml").send(twiml.toString());
+      }
+      speak(
+        twiml,
+        getSilenceResponse(callData.silenceCount)
+      );
+      activeCalls.set(CallSid, callData);
+      return res.type("text/xml").send(twiml.toString());
+    }
+    callData.silenceCount = 0;
+
+    // ── Side question handling — answer + redirect to next field ────
+    // Only if not in a critical awaiting state
+    const notInCriticalState =
+      !callData.awaitingPhoneConfirm &&
+      !callData.awaitingAlternatePhone &&
+      !callData.awaitingCityConfirm &&
+      !callData.awaitingComplaintAction &&
+      !callData.awaitingFinalConfirm &&
+      !callData.awaitingChassisMore &&
+      !callData.awaitingPhoneMore;
+
+    if (notInCriticalState) {
+      const sideAns = answerSideQuestion(userInput);
+      if (sideAns) {
+        const missing = missingField(callData.extractedData);
+        let redirect = "";
+        if (missing === "machine_no") redirect = " Chassis number bataiye.";
+        else if (missing === "complaint_title") redirect = " Machine mein kya problem hai?";
+        else if (missing === "machine_status") redirect = " Machine band hai ya chal rahi hai?";
+        else if (missing === "city") redirect = " Machine kis shehar mein hai?";
+        else if (missing === "customer_phone") redirect = " Mobile number bataiye.";
+
+        const combined = cleanTTS(sideAns + redirect);
+        callData.messages.push({ role: "assistant", text: combined, timestamp: new Date() });
+        activeCalls.set(CallSid, callData);
+        speak(twiml, combined);
+        return res.type("text/xml").send(twiml.toString());
+      }
+    }
+
+    callData.messages.push({ role: "user", text: userInput, timestamp: new Date() });
+
+    // ── Early complaint capture — extract even before machine found ──
+    const earlyComplaints = extractAllComplaintTitles(userInput);
+    if (earlyComplaints.length) {
+      if (!callData.extractedData.complaint_title)
+        callData.extractedData.complaint_title = earlyComplaints[0];
+      const existing = callData.extractedData.complaint_details
+        ? callData.extractedData.complaint_details.split("; ")
+        : [];
+      callData.extractedData.complaint_details = [
+        ...new Set([...existing, ...earlyComplaints]),
+      ].join("; ");
+    }
+
+    // ── Sanitize ─────────────────────────────────────────────────────
+    callData.extractedData = sanitizeExtractedData(callData.extractedData);
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 1.5: Chassis chunk accumulation
+    // Audio: customers give chassis in 2-4 chunks of 2-5 digits each
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (callData.awaitingChassisMore && !callData.customerData) {
+      const digitsInInput = normalizeSpokenDigits(userInput);
+      if (digitsInInput.length > 0 && digitsInInput.length <= 7) {
+        if (digitsInInput.length >= 6) {
+          callData.chassisPartials = [digitsInInput]; // full number given
+        } else {
+          callData.chassisPartials.push(digitsInInput);
         }
+        console.log(
+          `   🔢 Chassis chunk: "${digitsInInput}" → partials: [${callData.chassisPartials.join(", ")}]`
+        );
 
-        const userInput = SpeechResult?.trim() || "";
-        callData.turnCount++;
-        const lo = userInput.toLowerCase();
-
-        console.log(`\n${"─".repeat(50)}`);
-        console.log(`🔄 [T${callData.turnCount}] "${userInput || "[SILENCE]"}"`);
-
-        // ── Hard turn limit ─────────────────────────────────────────
-        if (callData.turnCount > 25) {
-            sayFinal(twiml, "Engineer ko message kar diya. Dhanyavaad!");
-            twiml.hangup();
-            activeCalls.delete(CallSid);
-            return res.type("text/xml").send(twiml.toString());
-        }
-
-        // ── Silence handling ────────────────────────────────────────
-        if (!userInput || userInput.length < 2) {
-            callData.silenceCount++;
-            const hasData = !!(callData.customerData || callData.extractedData.machine_no);
-            if (callData.silenceCount >= (hasData ? 5 : 3)) {
-                sayFinal(twiml, "Koi awaaz nahi aayi. Dobara call karein.");
-                twiml.hangup();
-                activeCalls.delete(CallSid);
-                return res.type("text/xml").send(twiml.toString());
-            }
-            const silenceReplies = ["Bataiye.", "Main sun rahi hun.", "Haan?", "Sun rahi hun.", "Bataiye."];
-            speak(twiml, silenceReplies[Math.min(callData.silenceCount - 1, silenceReplies.length - 1)]);
-            activeCalls.set(CallSid, callData);
-            return res.type("text/xml").send(twiml.toString());
-        }
-        callData.silenceCount = 0;
-
-        const earlyAnswer = answerSideQuestion(userInput);
-        if (earlyAnswer && !callData.awaitingPhoneConfirm && !callData.awaitingAlternatePhone && !callData.awaitingCityConfirm && !callData.awaitingComplaintAction && !callData.awaitingFinalConfirm) {
-            callData.messages.push({ role: "assistant", text: earlyAnswer, timestamp: new Date() });
-            activeCalls.set(CallSid, callData);
-            speak(twiml, earlyAnswer);
-            return res.type("text/xml").send(twiml.toString());
-        }
-
-        callData.messages.push({ role: "user", text: userInput, timestamp: new Date() });
-
-        // ── EARLY COMPLAINT CAPTURE ──────────────────────────────────
-        // Extract complaints immediately when customer speaks, even before machine number
-        const earlyComplaints = extractAllComplaintTitles(userInput);
-        if (earlyComplaints.length) {
-           if (!callData.extractedData.complaint_title) {
-              callData.extractedData.complaint_title = earlyComplaints[0];
-           }
-
-           const existing = callData.extractedData.complaint_details
-              ? callData.extractedData.complaint_details.split("; ")
-              : [];
-
-           callData.extractedData.complaint_details = [...new Set([
-              ...existing,
-              ...earlyComplaints
-           ])].join("; ");
-        }
-
-        // ── STEP 1: Fast regex extraction ───────────────────────────
-        callData.extractedData = sanitizeExtractedData(callData.extractedData);
-
-        // ── STEP 1.5: Incremental chassis number accumulation ────────
-        // If we are waiting for more chassis digits, handle that first
-        if (callData.awaitingChassisMore && !callData.customerData) {
-            const digitsInInput = normalizeSpokenDigits(userInput);
-            if (digitsInInput.length > 0 && digitsInInput.length <= 7) {
-                // If user suddenly gives full number, replace partials
-                if (digitsInInput.length >= 6) {
-                   callData.chassisPartials = [digitsInInput];
-                } else {
-                   callData.chassisPartials.push(digitsInInput);
-                }
-                const spokenDigits = digitsInInput.split('').join(' ');
-
-                console.log(`   🔢 Chassis chunk: "${digitsInInput}" → partials: [${callData.chassisPartials.join(', ')}]`);
-
-                // Generate all possible variations and try each one
-                const variations = generateChassisVariations(callData.chassisPartials);
-                let foundMachine = null;
-
-                for (const variation of variations) {
-                    if (/^\d{4,7}$/.test(variation)) {
-                        const v = await validateMachineNumber(variation);
-                        if (v.valid) {
-                            foundMachine = { variation, data: v.data };
-                            break;
-                        }
-                    }
-                }
-
-                if (foundMachine) {
-                    callData.customerData = foundMachine.data;
-                    callData.extractedData.machine_no = foundMachine.data.machineNo;
-                    callData.extractedData.customer_name = foundMachine.data.name;
-                    callData.pendingPhoneConfirm = true;
-                    callData.machineNotFoundCount = 0;
-                    callData.awaitingChassisMore = false;
-                    callData.chassisPartials = [];
-                    callData.chassisAccumulated = '';
-                    console.log(`   ✅ Machine found via multi-pass: ${foundMachine.data.name} (variation: ${foundMachine.variation})`);
-                    // Fall through to phone confirm step
-                } else {
-                    callData.machineNotFoundCount++;
-                    callData.chassisAccumulated = callData.chassisPartials.join('');
-                    console.warn(`   ❌ Machine not found in variations: [${variations.join(', ')}] (attempt ${callData.machineNotFoundCount})`);
-
-                    if (callData.machineNotFoundCount >= 5) {
-                        // 5 retries done — try phone fallback, then give up
-                        if (callData.callingNumber) {
-                            const pr = callData._phoneData || await findMachineByPhone(callData.callingNumber);
-                            if (pr.valid) {
-                                callData.customerData = pr.data;
-                                callData.extractedData.machine_no = pr.data.machineNo;
-                                callData.extractedData.customer_name = pr.data.name;
-                                callData.pendingPhoneConfirm = true;
-                                callData.machineNotFoundCount = 0;
-                                callData.awaitingChassisMore = false;
-                                console.log(`   ✅ Phone fallback: ${pr.data.name}`);
-                                // Fall through
-                            } else {
-                                sayFinal(twiml, "Chassis number nahi mil raha. Engineer ko message bhej deta hun. Dhanyavaad!");
-                                twiml.hangup();
-                                activeCalls.delete(CallSid);
-                                return res.type("text/xml").send(twiml.toString());
-                            }
-                        } else {
-                            sayFinal(twiml, "Chassis number nahi mil raha. Engineer ko message bhej deta hun. Dhanyavaad!");
-                            twiml.hangup();
-                            activeCalls.delete(CallSid);
-                            return res.type("text/xml").send(twiml.toString());
-                        }
-                    } else {
-                        // Ask for more digits
-                        callData.awaitingChassisMore = true;
-                        activeCalls.set(CallSid, callData);
-                        const accumulated = callData.chassisPartials.join('');
-                        speak(twiml, `Abhi ${accumulated.split('').join(' ')}. Aur digits bataiye.`);
-                        return res.type("text/xml").send(twiml.toString());
-                    }
-                }
-            }
-            // If no digits found in input, stop waiting for chassis and continue normal flow
-            callData.awaitingChassisMore = false;
-        }
-
-        // ── STEP 1.5.1: Incremental phone number accumulation ────────
-        // If we are waiting for more phone digits, handle that first
-        if (callData.awaitingPhoneMore) {
-            const fullPhone = parsePhoneFromText(userInput);
-            if (fullPhone) {
-                callData.extractedData.customer_phone = fullPhone;
-                callData.phonePartials = [];
-                callData.phoneAccumulated = "";
-                callData.awaitingPhoneMore = false;
-                console.log(`   ✅ Phone collected from full input: ${fullPhone}`);
-            } else {
-                const digitsInInput = normalizeSpokenDigits(userInput);
-                if (digitsInInput.length > 0 && digitsInInput.length <= 10) {
-                    if (digitsInInput.length >= 9) {
-                        callData.phonePartials = [digitsInInput];
-                    } else {
-                        callData.phonePartials.push(digitsInInput);
-                    }
-                    callData.phoneAccumulated = callData.phonePartials.join('');
-                    const accumulated = callData.phoneAccumulated;
-                    console.log(`   📱 Phone chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
-
-                    if (accumulated.length === 10 && /^[6-9]/.test(accumulated)) {
-                        if (callData.awaitingAlternatePhone) {
-                            const originalPhone = callData.customerData?.phone || "";
-                            if (originalPhone && originalPhone !== accumulated) {
-                                callData.extractedData.customer_phone = `${originalPhone}, ${accumulated}`;
-                            } else {
-                                callData.extractedData.customer_phone = accumulated;
-                            }
-                            callData.awaitingAlternatePhone = false;
-                        } else {
-                            callData.extractedData.customer_phone = accumulated;
-                        }
-                        callData.phonePartials = [];
-                        callData.phoneAccumulated = '';
-                        callData.awaitingPhoneMore = false;
-                        console.log(`   ✅ Phone collected via chunks: ${accumulated}`);
-                    } else if (accumulated.length < 5) {
-                        callData.awaitingPhoneMore = true;
-                        activeCalls.set(CallSid, callData);
-                        gatherSilently(twiml);
-                        return res.type("text/xml").send(twiml.toString());
-                    } else if (accumulated.length < 10) {
-                        callData.awaitingPhoneMore = true;
-                        activeCalls.set(CallSid, callData);
-                        speak(twiml, `Abhi ${accumulated.split('').join(' ')} mila hai. Baaki number bataiye.`);
-                        return res.type("text/xml").send(twiml.toString());
-                    } else {
-                        // Invalid accumulated phone, reset
-                        callData.phonePartials = [];
-                        callData.phoneAccumulated = '';
-                        callData.awaitingPhoneMore = false;
-                        speak(twiml, "Phone number galat laga. Dobara pura number bataiye.");
-                        return res.type("text/xml").send(twiml.toString());
-                    }
-                }
-            }
-            // If no digits found in input, stop waiting for phone and continue normal flow
-            callData.awaitingPhoneMore = false;
-        }
-
-        const rxData = extractAllData(userInput, callData.extractedData);
-        for (const [k, v] of Object.entries(rxData)) {
-            if (v && !callData.extractedData[k]) callData.extractedData[k] = v;
-        }
-
-        // ── Multi-complaint accumulation ────────────────────────────
-        const allFoundComplaints = extractAllComplaintTitles(userInput);
-        if (allFoundComplaints.length > 0) {
-            if (!callData.extractedData.complaint_title) {
-                callData.extractedData.complaint_title = allFoundComplaints[0];
-            }
-            const existingDetails = callData.extractedData.complaint_details
-                ? callData.extractedData.complaint_details.split('; ').map(s => s.trim()).filter(Boolean)
-                : [];
-            const alreadyHave = new Set([callData.extractedData.complaint_title, ...existingDetails]);
-            const newOnes = allFoundComplaints.filter(c => !alreadyHave.has(c));
-            if (newOnes.length > 0) {
-                const all = [...existingDetails, ...newOnes];
-                callData.extractedData.complaint_details = [...new Set(all)].join("; ");
-                console.log(`   📝 Multi-complaints: ${callData.extractedData.complaint_title} + [${newOnes.join(', ')}]`);
-            }
-        }
-
-        // ── STEP 2: City match ──────────────────────────────────────
-        if (callData.extractedData.city && !callData.extractedData.city_id) {
-            const mc = matchServiceCenter(callData.extractedData.city);
-            if (mc) {
-                callData.extractedData.city = mc.city_name;
-                callData.extractedData.city_id = mc.branch_code;
-                callData.extractedData.branch = mc.branch_name;
-                callData.extractedData.outlet = mc.city_name;
-                callData.extractedData.lat = mc.lat;
-                callData.extractedData.lng = mc.lng;
-                if (!callData.cityConfirmed) {
-                    callData.pendingCityConfirm = true;
-                }
-                console.log(`   🗺️  ${mc.city_name} → ${mc.branch_name}`);
-            } else {
-                // Remove hallucinated city
-                callData.extractedData.city = null;
-                console.log(`   ❌ Hallucinated city removed: ${callData.extractedData.city}`);
-            }
-        }
-
-        // ── STEP 3: machine_status is now collected by AI question ───
-        // No auto-guessing — AI asks "Machine bilkul band hai ya problem ke saath chal rahi hai?"
-
-        // ── STEP 4: Machine number lookup ───────────────────────────
-        if (!callData.customerData && callData.extractedData.machine_no) {
-            const v = await validateMachineNumber(callData.extractedData.machine_no);
+        const variations = generateChassisVariations(callData.chassisPartials);
+        let foundMachine = null;
+        for (const variation of variations) {
+          if (/^\d{4,7}$/.test(variation)) {
+            const v = await validateMachineNumber(variation);
             if (v.valid) {
-                callData.customerData = v.data;
-                callData.extractedData.customer_name = v.data.name;
+              foundMachine = { variation, data: v.data };
+              break;
+            }
+          }
+        }
+
+        if (foundMachine) {
+          callData.customerData = foundMachine.data;
+          callData.extractedData.machine_no = foundMachine.data.machineNo;
+          callData.extractedData.customer_name = foundMachine.data.name;
+          callData.pendingPhoneConfirm = true;
+          callData.machineNotFoundCount = 0;
+          callData.awaitingChassisMore = false;
+          callData.chassisPartials = [];
+          callData.chassisAccumulated = "";
+          console.log(`   ✅ Machine found via chunks: ${foundMachine.data.name}`);
+        } else {
+          callData.machineNotFoundCount++;
+          callData.chassisAccumulated = callData.chassisPartials.join("");
+          console.warn(
+            `   ❌ Not found in variations: [${variations.join(", ")}] (attempt ${callData.machineNotFoundCount})`
+          );
+
+          if (callData.machineNotFoundCount >= 5) {
+            // Try phone fallback
+            if (callData.callingNumber) {
+              const pr =
+                callData._phoneData ||
+                (await findMachineByPhone(callData.callingNumber));
+              if (pr.valid) {
+                callData.customerData = pr.data;
+                callData.extractedData.machine_no = pr.data.machineNo;
+                callData.extractedData.customer_name = pr.data.name;
                 callData.pendingPhoneConfirm = true;
                 callData.machineNotFoundCount = 0;
                 callData.awaitingChassisMore = false;
-                callData.chassisPartials = [];
-                callData.chassisAccumulated = '';
-                console.log(`   ✅ Machine found: ${v.data.name}`);
-            } else {
-                callData.machineNotFoundCount++;
-                callData.extractedData.machine_no = null;
-                console.warn(`   ❌ Machine not found (attempt ${callData.machineNotFoundCount})`);
-
-                // On 3rd failed attempt, try phone fallback
-                if (callData.machineNotFoundCount === 3 && callData.callingNumber) {
-                    const pr = callData._phoneData || await findMachineByPhone(callData.callingNumber);
-                    if (pr.valid) {
-                        callData.customerData = pr.data;
-                        callData.extractedData.machine_no = pr.data.machineNo;
-                        callData.extractedData.customer_name = pr.data.name;
-                        callData.pendingPhoneConfirm = true;
-                        callData.machineNotFoundCount = 0;
-                        callData.awaitingChassisMore = false;
-                        console.log(`   ✅ Phone fallback: ${pr.data.name}`);
-                    }
-                }
-
-                // If still not found, start incremental chassis mode
-                if (!callData.customerData && callData.machineNotFoundCount < 5) {
-                    callData.awaitingChassisMore = true;
-                    callData.chassisPartials = [];
-                    callData.chassisAccumulated = '';
-                    activeCalls.set(CallSid, callData);
-                    speak(twiml, `Yeh chassis number nahi mila. Thoda aaram se bataiye, pehle 2-3 number bataiye, main repeat karungi.`);
-                    return res.type("text/xml").send(twiml.toString());
-                }
-
-                if (callData.machineNotFoundCount >= 5) {
-                    sayFinal(twiml, "Chassis number nahi mil raha. Engineer ko message bhej deta hun. Dhanyavaad!");
-                    twiml.hangup();
-                    activeCalls.delete(CallSid);
-                    return res.type("text/xml").send(twiml.toString());
-                }
-            }
-        }
-
-        // ── STEP 5: Phone confirm prompt (one-time) ─────────────────
-        // Shows last 2 digits of registered phone + "tumhare phone mein"
-        if (callData.pendingPhoneConfirm && callData.customerData?.phone) {
-            const ph = String(callData.customerData.phone);
-            const lastTwo = ph.slice(-2);
-            callData.pendingPhoneConfirm = false;
-            callData.awaitingPhoneConfirm = true;
-            activeCalls.set(CallSid, callData);
-            speak(twiml, `${callData.customerData.name.split(" ")[0]}, kya yehi number save karna hai jisme last mein ${lastTwo} aata hai, ya change karna hai?`);
-            return res.type("text/xml").send(twiml.toString());
-        }
-
-        // ── STEP 6: Handle phone confirm answer ─────────────────────
-        if (callData.awaitingPhoneConfirm) {
-            callData.awaitingPhoneConfirm = false;
-            const foundPhone = parsePhoneFromText(userInput);
-            if (foundPhone) {
-                callData.extractedData.customer_phone = foundPhone;
-                console.log(`   ✅ Phone changed by direct input: ${foundPhone}`);
-            } else {
-                // Check if user wants to change the phone
-                const isChangeRequest = /(change|चेंज|dusra|naya|new|different|alag|no|nahi|nhi|nai)/i.test(lo);
-                // Check if user mentions "badalwana/badalna" (imply change but want to proceed without asking)
-                // IMPORTANT: Support both English transliteration AND Devanagari script
-                const isBadalwana = /(badalwana|badalna|badal|badli|badlwana|फिर से|बदलना|बदल|बदलवाना|बदली|बदलवानी)/i.test(userInput);
-                
-                if (isBadalwana && callData.customerData?.phone) {
-                    // User doesn't want to change, just proceed with existing phone
-                    callData.extractedData.customer_phone = callData.customerData.phone;
-                    console.log(`   ✅ Phone confirmed (बदलवाना): ${callData.customerData.phone}`);
-                } else if (isPositiveConfirmation(userInput) && callData.customerData?.phone) {
-                    callData.extractedData.customer_phone = callData.customerData.phone;
-                    console.log(`   ✅ Phone confirmed: ${callData.customerData.phone}`);
-                } else if (isChangeRequest) {
-                    // Check for chunked phone input
-                    const digitsInInput = normalizeSpokenDigits(userInput);
-                    if (digitsInInput.length > 0 && digitsInInput.length <= 10) {
-                        callData.phonePartials.push(digitsInInput);
-                        callData.phoneAccumulated = callData.phonePartials.join('');
-                        const accumulated = callData.phoneAccumulated;
-                        console.log(`   📱 Phone chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
-
-                        if (accumulated.length === 10 && /^[6-9]/.test(accumulated)) {
-                            callData.extractedData.customer_phone = accumulated;
-                            callData.phonePartials = [];
-                            callData.phoneAccumulated = '';
-                            callData.awaitingPhoneMore = false;
-                            console.log(`   ✅ Phone collected via chunks: ${accumulated}`);
-                        } else if (accumulated.length < 10) {
-                            callData.awaitingPhoneMore = true;
-                            activeCalls.set(CallSid, callData);
-                            speak(twiml, `Abhi ${accumulated.split('').join(' ')} mila hai. Baaki number bataiye.`);
-                            return res.type("text/xml").send(twiml.toString());
-                        } else {
-                            // Invalid accumulated phone, reset
-                            callData.phonePartials = [];
-                            callData.phoneAccumulated = '';
-                            callData.awaitingPhoneMore = false;
-                            speak(twiml, "Phone number galat laga. Dobara pura number bataiye.");
-                            return res.type("text/xml").send(twiml.toString());
-                        }
-                    } else {
-                        callData.awaitingAlternatePhone = true;
-                        activeCalls.set(CallSid, callData);
-                        speak(twiml, "Apna dusra number bataiye.");
-                        return res.type("text/xml").send(twiml.toString());
-                    }
-                }
-            }
-        }
-
-        // ── STEP 6.1: Handle alternate phone number ──────────────────
-        if (callData.awaitingAlternatePhone) {
-            callData.awaitingAlternatePhone = false;
-            const foundPhone = parsePhoneFromText(userInput);
-            if (foundPhone) {
-                const originalPhone = callData.customerData?.phone || "";
-                if (originalPhone && originalPhone !== foundPhone) {
-                    callData.extractedData.customer_phone = `${originalPhone}, ${foundPhone}`;
-                } else {
-                    callData.extractedData.customer_phone = foundPhone;
-                }
-                console.log(`   ✅ Alternate phone saved: ${callData.extractedData.customer_phone}`);
-            } else {
-                // Check for chunked phone input
-                const digitsInInput = normalizeSpokenDigits(userInput);
-                if (digitsInInput.length > 0 && digitsInInput.length <= 10) {
-                    if (digitsInInput.length >= 9) {
-                        callData.phonePartials = [digitsInInput];
-                    } else {
-                        callData.phonePartials.push(digitsInInput);
-                    }
-                    callData.phoneAccumulated = callData.phonePartials.join('');
-                    const accumulated = callData.phoneAccumulated;
-                    console.log(`   📱 Alternate phone chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
-
-                    if (accumulated.length === 10 && /^[6-9]/.test(accumulated)) {
-                        const originalPhone = callData.customerData?.phone || "";
-                        if (originalPhone && originalPhone !== accumulated) {
-                            callData.extractedData.customer_phone = `${originalPhone}, ${accumulated}`;
-                        } else {
-                            callData.extractedData.customer_phone = accumulated;
-                        }
-                        callData.phonePartials = [];
-                        callData.phoneAccumulated = '';
-                        callData.awaitingPhoneMore = false;
-                        console.log(`   ✅ Alternate phone collected via chunks: ${accumulated}`);
-                    } else if (accumulated.length < 5) {
-                        callData.awaitingPhoneMore = true;
-                        activeCalls.set(CallSid, callData);
-                        gatherSilently(twiml);
-                        return res.type("text/xml").send(twiml.toString());
-                    } else if (accumulated.length < 10) {
-                        callData.awaitingPhoneMore = true;
-                        activeCalls.set(CallSid, callData);
-                        speak(twiml, `Abhi ${accumulated.split('').join(' ')} mila hai. Baaki number bataiye.`);
-                        return res.type("text/xml").send(twiml.toString());
-                    } else {
-                        // Invalid accumulated phone, reset
-                        callData.phonePartials = [];
-                        callData.phoneAccumulated = '';
-                        callData.awaitingPhoneMore = false;
-                        speak(twiml, "Phone number galat laga. Dobara pura number bataiye.");
-                        return res.type("text/xml").send(twiml.toString());
-                    }
-                } else {
-                    console.log(`   🔄 No phone found in alternate input`);
-                    // If they didn't provide a phone, just continue and let the AI catch it if missing later.
-                }
-            }
-        }
-
-        // ── STEP 6.7: City & Branch confirmation ────────────────────
-        if (callData.pendingCityConfirm) {
-            callData.pendingCityConfirm = false;
-            callData.awaitingCityConfirm = true;
-            activeCalls.set(CallSid, callData);
-            speak(twiml, `${callData.extractedData.branch} mein ${callData.extractedData.city} aapka near city rahegi?`);
-            return res.type("text/xml").send(twiml.toString());
-        }
-
-        if (callData.awaitingCityConfirm) {
-            callData.awaitingCityConfirm = false;
-            const isNo = /(nahi|nhi|no|galat|wrong|nai)/i.test(lo);
-            if (!isNo) {
-                callData.cityConfirmed = true;
-                console.log(`   ✅ City confirmed: ${callData.extractedData.city}`);
-            } else {
-                callData.extractedData.city = null;
-                callData.extractedData.city_id = null;
-                callData.extractedData.branch = null;
-                console.log(`   🔄 City rejected — will ask again`);
-                speak(twiml, "Apni nearest city ka naam dobara bataiye.");
-                return res.type("text/xml").send(twiml.toString());
-            }
-        }
-
-        // ── STEP 7: Existing complaint scenario ─────────────────────
-        if (!callData.awaitingComplaintAction) {
-            const repeatRx = /(pehle complaint|already complaint|complaint kar di|complaint ki thi|engineer nahi aaya|engineer nhi aaya|aaya nahi|kab aayega|bahut der|kal se wait|2 din|3 din|dobara complaint|phir se complaint|re-register)/i;
-            if (repeatRx.test(lo)) {
-                callData.awaitingComplaintAction = true;
-                let existingInfo = null;
-                const machNo = callData.extractedData.machine_no || callData.customerData?.machineNo;
-                if (machNo) existingInfo = await getExistingComplaint(machNo);
-                else if (callData.callingNumber) {
-                    const pr = callData._phoneData || await findMachineByPhone(callData.callingNumber);
-                    if (pr.valid) {
-                        callData.customerData = pr.data;
-                        callData.extractedData.machine_no = pr.data.machineNo;
-                        existingInfo = await getExistingComplaint(pr.data.machineNo);
-                    }
-                }
-
-                if (existingInfo?.found) {
-                    callData.existingComplaintId = existingInfo.complaintId;
-                    activeCalls.set(CallSid, callData);
-                    speak(twiml, `Complaint ${existingInfo.complaintId} mili. Nayi complaint karein ya engineer ko urgent message bhejein?`);
-                } else {
-                    callData.awaitingComplaintAction = false;
-                    activeCalls.set(CallSid, callData);
-                    speak(twiml, "Pehli complaint nahi mili. Nayi register karta hun. Chassis number bataiye.");
-                }
-                return res.type("text/xml").send(twiml.toString());
-            }
-        }
-
-        // ── STEP 8: Handle complaint-action choice ───────────────────
-        if (callData.awaitingComplaintAction) {
-            callData.awaitingComplaintAction = false;
-            const wantsUrgent = /(urgent|jaldi|message|engineer ko|escalate|priority)/i.test(lo);
-            if (wantsUrgent) {
-                await escalateToEngineer(callData.existingComplaintId, callData.callingNumber);
-                sayFinal(twiml, "Engineer ko urgent message bhej diya. Jaldi aayega. Dhanyavaad!");
+                console.log(`   ✅ Phone fallback: ${pr.data.name}`);
+              } else {
+                sayFinal(twiml, "Chassis number nahi mil raha. Engineer bhej raha hun. Dhanyavaad!");
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
-            }
-            // else fall through to register new complaint
-        }
-
-        // ── STEP 9: "Aur kuch bhi?" final confirmation ──────────────
-        // Triggered once all fields are collected — ask before submit
-        const missing = missingField(callData.extractedData);
-        const machineValidated = !!callData.customerData;
-
-        if (!missing && machineValidated && callData.cityConfirmed && !callData.awaitingFinalConfirm) {
-            const sideAnswer = answerSideQuestion(userInput);
-            if (sideAnswer && !isPositiveConfirmation(lo) && !isAddMoreProblem(lo) && !isNegativeConfirmation(lo)) {
-                callData.awaitingFinalConfirm = true;
-                activeCalls.set(CallSid, callData);
-                twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, sideAnswer);
-                return await handleSubmit(callData, twiml, res, CallSid);
-            }
-
-            callData.awaitingFinalConfirm = true;
-            activeCalls.set(CallSid, callData);
-            speak(twiml, "Aur koi problem toh nahi machine mein? Save kar dun complaint?");
-            return res.type("text/xml").send(twiml.toString());
-        }
-
-        // ── STEP 10: Handle final confirm answer ─────────────────────
-        if (callData.awaitingFinalConfirm) {
-            const addingMore = extractAllComplaintTitles(userInput);
-            const isConfirming = isPositiveConfirmation(lo);
-            const isNegative = isNegativeConfirmation(lo);
-            const wantsMore = isAddMoreProblem(lo);
-
-            if (isNegative) {
-                sayFinal(twiml, "Agar kuch aur ho toh dobara call karein. Dhanyavaad!");
-                twiml.hangup();
-                activeCalls.delete(CallSid);
-                return res.type("text/xml").send(twiml.toString());
-            }
-
-            if (addingMore.length > 0 && !isConfirming) {
-                const existingDetails = callData.extractedData.complaint_details
-                    ? callData.extractedData.complaint_details.split('; ').map(s => s.trim()).filter(Boolean)
-                    : [];
-                const alreadyHave = new Set([callData.extractedData.complaint_title, ...existingDetails]);
-                const newOnes = addingMore.filter(c => !alreadyHave.has(c));
-                if (newOnes.length > 0) {
-                    callData.extractedData.complaint_details = [...existingDetails, ...newOnes].join('; ');
-                    console.log(`   📝 Added more: [${newOnes.join(', ')}]`);
-                }
-                callData.awaitingFinalConfirm = false;
-                activeCalls.set(CallSid, callData);
-                return await handleSubmit(callData, twiml, res, CallSid);
-            }
-
-            const sideAnswer = answerSideQuestion(userInput);
-            if (sideAnswer && !isConfirming) {
-                twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, sideAnswer);
-                callData.awaitingFinalConfirm = false;
-                activeCalls.set(CallSid, callData);
-                return await handleSubmit(callData, twiml, res, CallSid);
-            }
-
-            if (!isConfirming && !wantsMore) {
-                callData.awaitingFinalConfirm = false;
-                activeCalls.set(CallSid, callData);
-                return await handleSubmit(callData, twiml, res, CallSid);
-            }
-
-            callData.awaitingFinalConfirm = false;
-            activeCalls.set(CallSid, callData);
-            return await handleSubmit(callData, twiml, res, CallSid);
-        }
-
-        // ── STEP 11: AI response ──────────────────────────────────────
-        console.log(`   📊 ${JSON.stringify({
-            machine: callData.extractedData.machine_no || "❌",
-            complaint: callData.extractedData.complaint_title || "❌",
-            status: callData.extractedData.machine_status || "❌",
-            city: callData.extractedData.city || "❌",
-            phone: callData.extractedData.customer_phone || "❌",
-            missing: missing || "✅ READY",
-        })}`);
-
-        if (!missing && machineValidated) {
-            // Safety net — shouldn't reach here normally (caught in step 9)
-            callData.awaitingFinalConfirm = true;
-            activeCalls.set(CallSid, callData);
-            speak(twiml, "Aur koi problem toh nahi? Save kar dun?");
-            return res.type("text/xml").send(twiml.toString());
-        }
-
-        const aiResp = await getSmartAIResponse(callData);
-
-        // Merge AI-extracted data
-        if (aiResp.extractedData) {
-            for (const [k, v] of Object.entries(aiResp.extractedData)) {
-                if (v && !callData.extractedData[k]) callData.extractedData[k] = v;
-            }
-            if (callData.extractedData.city && !callData.extractedData.city_id) {
-                const mc = matchServiceCenter(callData.extractedData.city);
-                if (mc) {
-                    callData.extractedData.city = mc.city_name;
-                    callData.extractedData.city_id = mc.branch_code;
-                    callData.extractedData.branch = mc.branch_name;
-                    callData.extractedData.outlet = mc.city_name;
-                    callData.extractedData.lat = mc.lat;
-                    callData.extractedData.lng = mc.lng;
-                }
-            }
-        }
-
-        // Check again after AI — but route through final confirm if now complete
-        const stillMissing = missingField(callData.extractedData);
-        if (!stillMissing && machineValidated) {
-            callData.awaitingFinalConfirm = true;
-            callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
-            activeCalls.set(CallSid, callData);
-            speak(twiml, "Aur koi problem toh nahi machine mein? Save kar dun complaint?");
-            return res.type("text/xml").send(twiml.toString());
-        }
-
-        // HARD GUARD: never submit unless machine validated
-        if (aiResp.readyToSubmit && !machineValidated) {
-            console.warn(`   ⛔ AI said ready but machine NOT validated — blocking submit`);
-            aiResp.text = "Machine number nahi mila. Sahi chassis number bataiye.";
-            aiResp.readyToSubmit = false;
-        }
-
-        // HARD GUARD: never submit unless city confirmed
-        if (aiResp.readyToSubmit && !callData.cityConfirmed) {
-            console.warn(`   ⛔ AI said ready but city NOT confirmed — blocking submit`);
-            aiResp.text = "Pehle aapka sheher confirm karein.";
-            aiResp.readyToSubmit = false;
-        }
-
-        // HARD GUARD: never submit unless phone confirmed
-        if (aiResp.readyToSubmit && !callData.extractedData.customer_phone) {
-            console.warn(`   ⛔ AI said ready but phone NOT confirmed — blocking submit`);
-            aiResp.text = "Pehle phone number confirm karein.";
-            aiResp.readyToSubmit = false;
-        }
-
-        // If AI marked as ready to submit, do it immediately (only if all guards pass)
-        if (aiResp.readyToSubmit && machineValidated && callData.cityConfirmed && callData.extractedData.customer_phone) {
-            callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
-            const result = await submitComplaint(callData);
-            const id = result.sapId || result.jobId || "";
-            
-            if (id) {
-                sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
+              }
             } else {
-                sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!");
+              sayFinal(twiml, "Chassis number nahi mil raha. Engineer bhej raha hun. Dhanyavaad!");
+              twiml.hangup();
+              activeCalls.delete(CallSid);
+              return res.type("text/xml").send(twiml.toString());
             }
-            twiml.hangup();
-            activeCalls.delete(CallSid);
+          } else {
+            callData.awaitingChassisMore = true;
+            activeCalls.set(CallSid, callData);
+            // Show what's collected so far — natural feedback
+            const soFar = callData.chassisAccumulated.split("").join(" ");
+            speak(
+              twiml,
+              `Abhi tak ${soFar} mila hai. Baaki number bataiye dhere se.`
+            );
             return res.type("text/xml").send(twiml.toString());
+          }
         }
-
-        callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
-        activeCalls.set(CallSid, callData);
-        speak(twiml, aiResp.text);
-        res.type("text/xml").send(twiml.toString());
-
-    } catch (err) {
-        console.error("❌ [PROCESS]", err.message);
-        sayFinal(twiml, "Thodi dikkat aa gayi. Engineer ko bhej raha hun.");
-        twiml.dial(process.env.HUMAN_AGENT_NUMBER || "+919876543210");
-        activeCalls.delete(CallSid);
-        res.type("text/xml").send(twiml.toString());
+      }
+      callData.awaitingChassisMore = false;
     }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 1.5.1: Phone chunk accumulation
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (callData.awaitingPhoneMore) {
+      const fullPhone = parsePhoneFromText(userInput);
+      if (fullPhone) {
+        callData.extractedData.customer_phone = fullPhone;
+        callData.phonePartials = [];
+        callData.phoneAccumulated = "";
+        callData.awaitingPhoneMore = false;
+        console.log(`   ✅ Phone from full input: ${fullPhone}`);
+      } else {
+        const digitsInInput = normalizeSpokenDigits(userInput);
+        if (digitsInInput.length > 0 && digitsInInput.length <= 10) {
+          if (digitsInInput.length >= 9) {
+            callData.phonePartials = [digitsInInput];
+          } else {
+            callData.phonePartials.push(digitsInInput);
+          }
+          callData.phoneAccumulated = callData.phonePartials.join("");
+          const accumulated = callData.phoneAccumulated;
+          console.log(`   📱 Phone chunk: "${digitsInInput}" → accumulated: "${accumulated}"`);
+
+          if (accumulated.length === 10 && /^[6-9]/.test(accumulated)) {
+            callData.extractedData.customer_phone = accumulated;
+            callData.phonePartials = [];
+            callData.phoneAccumulated = "";
+            callData.awaitingPhoneMore = false;
+            console.log(`   ✅ Phone via chunks: ${accumulated}`);
+          } else if (accumulated.length < 5) {
+            // Wait silently for more
+            callData.awaitingPhoneMore = true;
+            activeCalls.set(CallSid, callData);
+            gatherSilently(twiml);
+            return res.type("text/xml").send(twiml.toString());
+          } else if (accumulated.length < 10) {
+            callData.awaitingPhoneMore = true;
+            activeCalls.set(CallSid, callData);
+            speak(
+              twiml,
+              `Abhi ${accumulated.split("").join(" ")} mila hai. Baaki number bataiye.`
+            );
+            return res.type("text/xml").send(twiml.toString());
+          } else {
+            // Invalid — reset and re-ask
+            callData.phonePartials = [];
+            callData.phoneAccumulated = "";
+            callData.awaitingPhoneMore = false;
+            speak(twiml, "Phone number sahi nahi laga. Pura 10 digit number dobara bataiye.");
+            return res.type("text/xml").send(twiml.toString());
+          }
+        } else {
+          // Non-digit input — stay in phone collection
+          callData.awaitingPhoneMore = true;
+          activeCalls.set(CallSid, callData);
+          speak(twiml, "Pura 10 digit mobile number bataiye.");
+          return res.type("text/xml").send(twiml.toString());
+        }
+      }
+      callData.awaitingPhoneMore = false;
+    }
+
+    // ── Regex extraction ──────────────────────────────────────────────
+    const rxData = extractAllData(userInput, callData.extractedData);
+    for (const [k, v] of Object.entries(rxData)) {
+      if (v && !callData.extractedData[k]) callData.extractedData[k] = v;
+    }
+
+    // ── Multi-complaint accumulation ──────────────────────────────────
+    const allComplaints = extractAllComplaintTitles(userInput);
+    if (allComplaints.length > 0) {
+      if (!callData.extractedData.complaint_title)
+        callData.extractedData.complaint_title = allComplaints[0];
+      const existingDetails = callData.extractedData.complaint_details
+        ? callData.extractedData.complaint_details
+            .split("; ")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+      const alreadyHave = new Set([
+        callData.extractedData.complaint_title,
+        ...existingDetails,
+      ]);
+      const newOnes = allComplaints.filter((c) => !alreadyHave.has(c));
+      if (newOnes.length > 0) {
+        callData.extractedData.complaint_details = [
+          ...existingDetails,
+          ...newOnes,
+        ].join("; ");
+        console.log(`   📝 Multi-complaints: [${newOnes.join(", ")}]`);
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 2: City matching
+    // FIX: if city not found → clear + re-ask with examples
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (callData.extractedData.city && !callData.extractedData.city_id) {
+      const mc = matchServiceCenter(callData.extractedData.city);
+      if (mc) {
+        callData.extractedData.city = mc.city_name;
+        callData.extractedData.city_id = mc.branch_code;
+        callData.extractedData.branch = mc.branch_name;
+        callData.extractedData.outlet = mc.city_name;
+        callData.extractedData.lat = mc.lat;
+        callData.extractedData.lng = mc.lng;
+        callData.cityNotFoundCount = 0;
+        if (!callData.cityConfirmed) callData.pendingCityConfirm = true;
+        console.log(`   🗺️  ${mc.city_name} → ${mc.branch_name}`);
+      } else {
+        const attempted = callData.extractedData.city;
+        callData.extractedData.city = null; // clear invalid city
+        callData.cityNotFoundCount = (callData.cityNotFoundCount || 0) + 1;
+        console.log(
+          `   ❌ City not matched: ${attempted} (attempt ${callData.cityNotFoundCount})`
+        );
+        activeCalls.set(CallSid, callData);
+        // Give examples on 2nd+ failure
+        const hint =
+          callData.cityNotFoundCount >= 2
+            ? "Jaise Jaipur, Ajmer, Kota, Udaipur, Alwar, Sikar, Jodhpur — in mein se koi batao."
+            : "Yeh city hamare system mein nahi mili. Rajasthan ki woh city bataiye jahan machine khadi hai.";
+        speak(twiml, hint);
+        return res.type("text/xml").send(twiml.toString());
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 4: Machine number lookup
+    // FIX: after finding machine, ask complaint directly
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (!callData.customerData && callData.extractedData.machine_no) {
+      const v = await validateMachineNumber(callData.extractedData.machine_no);
+      if (v.valid) {
+        callData.customerData = v.data;
+        callData.extractedData.customer_name = v.data.name;
+        callData.machineNotFoundCount = 0;
+        callData.awaitingChassisMore = false;
+        callData.chassisPartials = [];
+        callData.chassisAccumulated = "";
+        console.log(`   ✅ Machine found: ${v.data.name}`);
+
+        // FIX: If complaint already captured from initial speech, skip asking
+        if (!callData.extractedData.complaint_title) {
+          const customerName = v.data.name.split(" ")[0] || "ji";
+          activeCalls.set(CallSid, callData);
+          speak(twiml, `${customerName} ji, machine mein kya problem hai?`);
+          return res.type("text/xml").send(twiml.toString());
+        }
+        // else fall through — complaint already known
+      } else {
+        callData.machineNotFoundCount++;
+        callData.extractedData.machine_no = null;
+        console.warn(
+          `   ❌ Machine not found (attempt ${callData.machineNotFoundCount})`
+        );
+
+        // Phone fallback on 3rd failure
+        if (callData.machineNotFoundCount === 3 && callData.callingNumber) {
+          const pr =
+            callData._phoneData ||
+            (await findMachineByPhone(callData.callingNumber));
+          if (pr.valid) {
+            callData.customerData = pr.data;
+            callData.extractedData.machine_no = pr.data.machineNo;
+            callData.extractedData.customer_name = pr.data.name;
+            callData.machineNotFoundCount = 0;
+            callData.awaitingChassisMore = false;
+            console.log(`   ✅ Phone fallback: ${pr.data.name}`);
+
+            if (!callData.extractedData.complaint_title) {
+              const customerName = pr.data.name.split(" ")[0] || "ji";
+              activeCalls.set(CallSid, callData);
+              speak(twiml, `${customerName} ji, machine mein kya problem hai?`);
+              return res.type("text/xml").send(twiml.toString());
+            }
+          }
+        }
+
+        if (!callData.customerData && callData.machineNotFoundCount < 5) {
+          callData.awaitingChassisMore = true;
+          callData.chassisPartials = [];
+          callData.chassisAccumulated = "";
+          activeCalls.set(CallSid, callData);
+          speak(
+            twiml,
+            "Yeh chassis number nahi mila. Dhere dhere ek ek number boliye."
+          );
+          return res.type("text/xml").send(twiml.toString());
+        }
+
+        if (callData.machineNotFoundCount >= 5) {
+          sayFinal(twiml, "Chassis number nahi mil raha. Engineer ko message bhej raha hun. Dhanyavaad!");
+          twiml.hangup();
+          activeCalls.delete(CallSid);
+          return res.type("text/xml").send(twiml.toString());
+        }
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 5: Phone confirmation prompt (one-time)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (callData.pendingPhoneConfirm && callData.customerData?.phone) {
+      const ph = String(callData.customerData.phone);
+      const lastTwo = ph.slice(-2);
+      callData.pendingPhoneConfirm = false;
+      callData.awaitingPhoneConfirm = true;
+      activeCalls.set(CallSid, callData);
+      speak(
+        twiml,
+        `${callData.customerData.name.split(" ")[0]}, last mein ${lastTwo} wala number callback ke liye sahi hai? Ya naya number denge?`
+      );
+      return res.type("text/xml").send(twiml.toString());
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 6: Handle phone confirm answer
+    // FIX: "nahi" at phone confirm = keep existing number, move on
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (callData.awaitingPhoneConfirm) {
+      callData.awaitingPhoneConfirm = false;
+      const foundPhone = parsePhoneFromText(userInput);
+
+      // "nahi" = customer doesn't want to change = keep existing
+      const isNoResponse =
+        /\b(nahi|nhi|nai|nahin|no)\b/i.test(userInput) &&
+        !/(change|naya|new|alag|badal)/i.test(userInput);
+
+      if (isNoResponse && callData.customerData?.phone) {
+        callData.extractedData.customer_phone = callData.customerData.phone;
+        console.log(`   ✅ Phone kept (nahi = keep existing): ${callData.customerData.phone}`);
+      } else if (foundPhone) {
+        callData.extractedData.customer_phone = foundPhone;
+        console.log(`   ✅ Phone changed directly: ${foundPhone}`);
+      } else if (isPositiveConfirmation(userInput) && callData.customerData?.phone) {
+        callData.extractedData.customer_phone = callData.customerData.phone;
+        console.log(`   ✅ Phone confirmed: ${callData.customerData.phone}`);
+      } else if (/(change|naya|new|alag|badal|dusra)/i.test(lo)) {
+        callData.awaitingAlternatePhone = true;
+        activeCalls.set(CallSid, callData);
+        speak(twiml, "Pura 10 digit naya number bataiye.");
+        return res.type("text/xml").send(twiml.toString());
+      } else {
+        // Unclear — ask again clearly
+        callData.awaitingPhoneConfirm = true;
+        activeCalls.set(CallSid, callData);
+        const ph = String(callData.customerData?.phone || "").slice(-2);
+        speak(
+          twiml,
+          `Last mein ${ph} wala number sahi hai ya naya number dena hai?`
+        );
+        return res.type("text/xml").send(twiml.toString());
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 6.1: Alternate phone collection
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (callData.awaitingAlternatePhone) {
+      const foundPhone = parsePhoneFromText(userInput);
+      if (foundPhone) {
+        const orig = callData.customerData?.phone || "";
+        callData.extractedData.customer_phone =
+          orig && orig !== foundPhone ? `${orig}, ${foundPhone}` : foundPhone;
+        callData.awaitingAlternatePhone = false;
+        callData.phonePartials = [];
+        callData.phoneAccumulated = "";
+        console.log(`   ✅ Alternate phone: ${callData.extractedData.customer_phone}`);
+      } else {
+        const digitsInInput = normalizeSpokenDigits(userInput);
+        if (digitsInInput.length > 0) {
+          if (digitsInInput.length >= 9) {
+            callData.phonePartials = [digitsInInput];
+          } else {
+            callData.phonePartials.push(digitsInInput);
+          }
+          callData.phoneAccumulated = callData.phonePartials.join("");
+          const accumulated = callData.phoneAccumulated;
+
+          if (accumulated.length === 10 && /^[6-9]/.test(accumulated)) {
+            const orig = callData.customerData?.phone || "";
+            callData.extractedData.customer_phone =
+              orig && orig !== accumulated
+                ? `${orig}, ${accumulated}`
+                : accumulated;
+            callData.phonePartials = [];
+            callData.phoneAccumulated = "";
+            callData.awaitingAlternatePhone = false;
+            console.log(`   ✅ Alternate phone via chunks: ${accumulated}`);
+          } else if (accumulated.length < 10) {
+            activeCalls.set(CallSid, callData);
+            speak(
+              twiml,
+              `Abhi ${accumulated.split("").join(" ")} mila hai. Baaki number bataiye.`
+            );
+            return res.type("text/xml").send(twiml.toString());
+          } else {
+            callData.phonePartials = [];
+            callData.phoneAccumulated = "";
+            speak(twiml, "Number sahi nahi laga. Pura 10 digit number bataiye.");
+            return res.type("text/xml").send(twiml.toString());
+          }
+        } else {
+          // No digits — re-ask
+          activeCalls.set(CallSid, callData);
+          speak(twiml, "Pura 10 digit mobile number bataiye.");
+          return res.type("text/xml").send(twiml.toString());
+        }
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 6.7: City confirmation
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (callData.pendingCityConfirm) {
+      callData.pendingCityConfirm = false;
+      callData.awaitingCityConfirm = true;
+      activeCalls.set(CallSid, callData);
+      speak(
+        twiml,
+        `${callData.extractedData.city} mein ${callData.extractedData.branch} branch — kya yahi sahi hai?`
+      );
+      return res.type("text/xml").send(twiml.toString());
+    }
+
+    if (callData.awaitingCityConfirm) {
+      callData.awaitingCityConfirm = false;
+      const isNo = /(nahi|nhi|no|galat|wrong|nai)/i.test(lo);
+      if (!isNo) {
+        callData.cityConfirmed = true;
+        console.log(`   ✅ City confirmed: ${callData.extractedData.city}`);
+      } else {
+        callData.extractedData.city = null;
+        callData.extractedData.city_id = null;
+        callData.extractedData.branch = null;
+        console.log("   🔄 City rejected — asking again");
+        speak(twiml, "Rajasthan ki woh city bataiye jahan machine abhi khadi hai.");
+        return res.type("text/xml").send(twiml.toString());
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 7: Existing complaint detection
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (!callData.awaitingComplaintAction) {
+      const repeatRx =
+        /(pehle complaint|already complaint|complaint kar di|complaint ki thi|engineer nahi aaya|engineer nhi aaya|aaya nahi|kab aayega|bahut der|kal se wait|2 din|3 din|dobara complaint|phir se complaint|re-register)/i;
+      if (repeatRx.test(lo)) {
+        callData.awaitingComplaintAction = true;
+        let existingInfo = null;
+        const machNo =
+          callData.extractedData.machine_no ||
+          callData.customerData?.machineNo;
+        if (machNo) {
+          existingInfo = await getExistingComplaint(machNo);
+        } else if (callData.callingNumber) {
+          const pr =
+            callData._phoneData ||
+            (await findMachineByPhone(callData.callingNumber));
+          if (pr.valid) {
+            callData.customerData = pr.data;
+            callData.extractedData.machine_no = pr.data.machineNo;
+            existingInfo = await getExistingComplaint(pr.data.machineNo);
+          }
+        }
+
+        if (existingInfo?.found) {
+          callData.existingComplaintId = existingInfo.complaintId;
+          activeCalls.set(CallSid, callData);
+          speak(
+            twiml,
+            `Complaint ${existingInfo.complaintId} mili. Nayi complaint karein ya engineer ko urgent message bhejein?`
+          );
+        } else {
+          callData.awaitingComplaintAction = false;
+          activeCalls.set(CallSid, callData);
+          speak(twiml, "Pehli complaint nahi mili. Nayi register karte hain. Chassis number bataiye.");
+        }
+        return res.type("text/xml").send(twiml.toString());
+      }
+    }
+
+    // STEP 8: Handle complaint-action choice
+    if (callData.awaitingComplaintAction) {
+      callData.awaitingComplaintAction = false;
+      if (/(urgent|jaldi|message|engineer ko|escalate|priority)/i.test(lo)) {
+        await escalateToEngineer(callData.existingComplaintId, callData.callingNumber);
+        sayFinal(twiml, "Engineer ko urgent message bhej diya. Jaldi aayega. Dhanyavaad!");
+        twiml.hangup();
+        activeCalls.delete(CallSid);
+        return res.type("text/xml").send(twiml.toString());
+      }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 9: Final confirmation trigger
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const missing = missingField(callData.extractedData);
+    const machineValidated = !!callData.customerData;
+
+    if (!missing && machineValidated && callData.cityConfirmed && !callData.awaitingFinalConfirm) {
+      callData.awaitingFinalConfirm = true;
+      activeCalls.set(CallSid, callData);
+      // Vary the final confirm prompt to avoid sounding robotic
+      speak(twiml, getFinalConfirmPrompt());
+      return res.type("text/xml").send(twiml.toString());
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 10: Handle final confirm answer
+    // FIX: "nahi" = "no more problems" = SUBMIT (not cancel)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (callData.awaitingFinalConfirm) {
+      const addingMore = extractAllComplaintTitles(userInput);
+      const isConfirming = isPositiveConfirmation(userInput);
+      const noMore = isNoMoreProblems(userInput);
+      const isCancel = isHardCancel(userInput); // only "band karo", "cancel" etc.
+
+      // True cancel (rare)
+      if (isCancel && !noMore) {
+        sayFinal(twiml, "Agar kuch aur ho toh dobara call karein. Dhanyavaad!");
+        twiml.hangup();
+        activeCalls.delete(CallSid);
+        return res.type("text/xml").send(twiml.toString());
+      }
+
+      // Customer adds more problems
+      if (addingMore.length > 0 && !isConfirming && !noMore) {
+        const existingDetails = callData.extractedData.complaint_details
+          ? callData.extractedData.complaint_details
+              .split("; ")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : [];
+        const alreadyHave = new Set([
+          callData.extractedData.complaint_title,
+          ...existingDetails,
+        ]);
+        const newOnes = addingMore.filter((c) => !alreadyHave.has(c));
+        if (newOnes.length > 0) {
+          callData.extractedData.complaint_details = [
+            ...existingDetails,
+            ...newOnes,
+          ].join("; ");
+          console.log(`   📝 Added at confirm: [${newOnes.join(", ")}]`);
+        }
+        callData.awaitingFinalConfirm = false;
+        activeCalls.set(CallSid, callData);
+        return await handleSubmit(callData, twiml, res, CallSid);
+      }
+
+      // Side question at this stage → answer briefly then submit
+      const sideAns = answerSideQuestion(userInput);
+      if (sideAns && !isConfirming && !noMore) {
+        twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, sideAns);
+        callData.awaitingFinalConfirm = false;
+        activeCalls.set(CallSid, callData);
+        return await handleSubmit(callData, twiml, res, CallSid);
+      }
+
+      // "nahi" or "haan" or "save kar do" or anything unclear → all submit
+      callData.awaitingFinalConfirm = false;
+      activeCalls.set(CallSid, callData);
+      return await handleSubmit(callData, twiml, res, CallSid);
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STEP 11: AI response for anything not caught above
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    console.log(
+      `   📊 ${JSON.stringify({
+        machine: callData.extractedData.machine_no || "❌",
+        complaint: callData.extractedData.complaint_title || "❌",
+        status: callData.extractedData.machine_status || "❌",
+        city: callData.extractedData.city || "❌",
+        phone: callData.extractedData.customer_phone || "❌",
+        missing: missing || "✅ READY",
+      })}`
+    );
+
+    // Safety net — all data ready
+    if (!missing && machineValidated) {
+      callData.awaitingFinalConfirm = true;
+      activeCalls.set(CallSid, callData);
+      speak(twiml, getFinalConfirmPrompt());
+      return res.type("text/xml").send(twiml.toString());
+    }
+
+    const aiResp = await getSmartAIResponse(callData);
+
+    // Merge AI-extracted data
+    if (aiResp.extractedData) {
+      for (const [k, v] of Object.entries(aiResp.extractedData)) {
+        if (v && !callData.extractedData[k]) callData.extractedData[k] = v;
+      }
+      // Re-run city match if AI found one
+      if (callData.extractedData.city && !callData.extractedData.city_id) {
+        const mc = matchServiceCenter(callData.extractedData.city);
+        if (mc) {
+          callData.extractedData.city = mc.city_name;
+          callData.extractedData.city_id = mc.branch_code;
+          callData.extractedData.branch = mc.branch_name;
+          callData.extractedData.outlet = mc.city_name;
+          callData.extractedData.lat = mc.lat;
+          callData.extractedData.lng = mc.lng;
+        } else {
+          callData.extractedData.city = null; // reject hallucinated city
+        }
+      }
+    }
+
+    // Check again after AI
+    const stillMissing = missingField(callData.extractedData);
+    if (!stillMissing && machineValidated && callData.cityConfirmed) {
+      callData.awaitingFinalConfirm = true;
+      callData.messages.push({
+        role: "assistant",
+        text: aiResp.text,
+        timestamp: new Date(),
+      });
+      activeCalls.set(CallSid, callData);
+      speak(twiml, getFinalConfirmPrompt());
+      return res.type("text/xml").send(twiml.toString());
+    }
+
+    // HARD GUARDS — never submit without validation
+    if (aiResp.readyToSubmit && !machineValidated) {
+      console.warn("   ⛔ AI ready but machine NOT validated — blocking");
+      aiResp.readyToSubmit = false;
+    }
+    if (aiResp.readyToSubmit && !callData.cityConfirmed) {
+      console.warn("   ⛔ AI ready but city NOT confirmed — blocking");
+      aiResp.readyToSubmit = false;
+    }
+    if (aiResp.readyToSubmit && !callData.extractedData.customer_phone) {
+      console.warn("   ⛔ AI ready but phone NOT confirmed — blocking");
+      aiResp.readyToSubmit = false;
+    }
+
+    if (
+      aiResp.readyToSubmit &&
+      machineValidated &&
+      callData.cityConfirmed &&
+      callData.extractedData.customer_phone
+    ) {
+      callData.messages.push({
+        role: "assistant",
+        text: aiResp.text,
+        timestamp: new Date(),
+      });
+      return await handleSubmit(callData, twiml, res, CallSid);
+    }
+
+    callData.messages.push({
+      role: "assistant",
+      text: aiResp.text,
+      timestamp: new Date(),
+    });
+    activeCalls.set(CallSid, callData);
+    speak(twiml, cleanTTS(aiResp.text));
+    res.type("text/xml").send(twiml.toString());
+  } catch (err) {
+    console.error("❌ [PROCESS]", err.message);
+    sayFinal(twiml, "Thodi dikkat aa gayi. Engineer ko bhej raha hun.");
+    twiml.dial(process.env.HUMAN_AGENT_NUMBER || "+919876543210");
+    activeCalls.delete(CallSid);
+    res.type("text/xml").send(twiml.toString());
+  }
 });
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🚀 SUBMIT COMPLAINT
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ═══════════════════════════════════════════════════════════════
+   SUBMIT COMPLAINT
+═══════════════════════════════════════════════════════════════ */
 async function handleSubmit(callData, twiml, res, CallSid) {
-    console.log("\n🚀 [SUBMITTING COMPLAINT]");
-    const result = await submitComplaint(callData);
-    const id = result.sapId || result.jobId || "";
+  console.log("\n🚀 [SUBMITTING COMPLAINT]");
+  const result = await submitComplaint(callData);
+  const id = result.sapId || result.jobId || "";
 
-    if (id) {
-        sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
-    } else {
-        sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!");
-    }
+  if (id) {
+    sayFinal(
+      twiml,
+      `Complaint register ho gayi. Number hai ${String(id)
+        .split("")
+        .join(" ")}. Engineer contact karega. Shukriya!`
+    );
+  } else {
+    sayFinal(twiml, "Complaint register ho gayi. Engineer contact karega. Shukriya!");
+  }
 
-    twiml.hangup();
-    activeCalls.delete(CallSid);
-    return res.type("text/xml").send(twiml.toString());
+  twiml.hangup();
+  activeCalls.delete(CallSid);
+  return res.type("text/xml").send(twiml.toString());
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🔎 API HELPERS
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/* ═══════════════════════════════════════════════════════════════
+   API HELPERS
+═══════════════════════════════════════════════════════════════ */
 async function validateMachineNumber(machineNo) {
-    try {
-        const r = await axios.get(
-            `${BASE_URL}/get_machine_by_machine_no.php?machine_no=${machineNo}`,
-            { timeout: API_TIMEOUT, headers: API_HEADERS, validateStatus: s => s < 500 }
-        );
-        if (r.status === 200 && r.data?.status === 1 && r.data?.data) {
-            const d = r.data.data;
-            return {
-                valid: true,
-                data: {
-                    name: d.customer_name || "Unknown",
-                    city: d.city || "Unknown",
-                    model: d.machine_model || "Unknown",
-                    machineNo: d.machine_no || machineNo,
-                    phone: d.customer_phone_no || "Unknown",
-                    subModel: d.sub_model || "NA",
-                    machineType: d.machine_type || "Warranty",
-                    businessPartnerCode: d.business_partner_code || "NA",
-                    purchaseDate: d.purchase_date || "NA",
-                    installationDate: d.installation_date || "NA",
-                },
-            };
-        }
-        return { valid: false };
-    } catch { return { valid: false }; }
+  try {
+    const r = await axios.get(
+      `${BASE_URL}/get_machine_by_machine_no.php?machine_no=${machineNo}`,
+      { timeout: API_TIMEOUT, headers: API_HEADERS, validateStatus: (s) => s < 500 }
+    );
+    if (r.status === 200 && r.data?.status === 1 && r.data?.data) {
+      const d = r.data.data;
+      return {
+        valid: true,
+        data: {
+          name: d.customer_name || "Unknown",
+          city: d.city || "Unknown",
+          model: d.machine_model || "Unknown",
+          machineNo: d.machine_no || machineNo,
+          phone: d.customer_phone_no || "Unknown",
+          subModel: d.sub_model || "NA",
+          machineType: d.machine_type || "Warranty",
+          businessPartnerCode: d.business_partner_code || "NA",
+          purchaseDate: d.purchase_date || "NA",
+          installationDate: d.installation_date || "NA",
+        },
+      };
+    }
+    return { valid: false };
+  } catch {
+    return { valid: false };
+  }
 }
 
 async function findMachineByPhone(phone) {
-    if (!phone || phone.length < 8) return { valid: false };
-    try {
-        const r = await axios.get(
-            `${BASE_URL}/get_machine_by_phone.php?phone=${phone}`,
-            { timeout: API_TIMEOUT, headers: API_HEADERS, validateStatus: s => s < 500 }
-        );
-        if (r.status === 200 && r.data?.status === 1 && r.data?.data) {
-            const d = r.data.data;
-            return {
-                valid: true,
-                data: {
-                    name: d.customer_name || "Unknown",
-                    city: d.city || "Unknown",
-                    model: d.machine_model || "Unknown",
-                    machineNo: d.machine_no || phone,
-                    phone: d.customer_phone_no || phone,
-                    subModel: d.sub_model || "NA",
-                    machineType: d.machine_type || "Warranty",
-                    businessPartnerCode: d.business_partner_code || "NA",
-                    purchaseDate: d.purchase_date || "NA",
-                    installationDate: d.installation_date || "NA",
-                },
-            };
-        }
-        return { valid: false };
-    } catch { return { valid: false }; }
+  if (!phone || phone.length < 8) return { valid: false };
+  try {
+    const r = await axios.get(
+      `${BASE_URL}/get_machine_by_phone.php?phone=${phone}`,
+      { timeout: API_TIMEOUT, headers: API_HEADERS, validateStatus: (s) => s < 500 }
+    );
+    if (r.status === 200 && r.data?.status === 1 && r.data?.data) {
+      const d = r.data.data;
+      return {
+        valid: true,
+        data: {
+          name: d.customer_name || "Unknown",
+          city: d.city || "Unknown",
+          model: d.machine_model || "Unknown",
+          machineNo: d.machine_no || phone,
+          phone: d.customer_phone_no || phone,
+          subModel: d.sub_model || "NA",
+          machineType: d.machine_type || "Warranty",
+          businessPartnerCode: d.business_partner_code || "NA",
+          purchaseDate: d.purchase_date || "NA",
+          installationDate: d.installation_date || "NA",
+        },
+      };
+    }
+    return { valid: false };
+  } catch {
+    return { valid: false };
+  }
 }
 
 async function getExistingComplaint(machineNo) {
-    if (!machineNo) return { found: false };
-    try {
-        const r = await axios.get(
-            `${BASE_URL}/get_complaint_by_machine.php?machine_no=${machineNo}`,
-            { timeout: API_TIMEOUT, headers: API_HEADERS, validateStatus: s => s < 500 }
-        );
-        if (r.status === 200 && r.data?.status === 1 && r.data?.data) {
-            const d = r.data.data;
-            return {
-                found: true,
-                complaintId: d.complaint_sap_id || d.sap_id || d.complaint_id || "N/A",
-                status: d.status || "open",
-                engineerName: d.engineer_name || null,
-            };
-        }
-        return { found: false };
-    } catch (err) {
-        console.error("❌ Complaint lookup:", err.message);
-        return { found: false };
+  if (!machineNo) return { found: false };
+  try {
+    const r = await axios.get(
+      `${BASE_URL}/get_complaint_by_machine.php?machine_no=${machineNo}`,
+      { timeout: API_TIMEOUT, headers: API_HEADERS, validateStatus: (s) => s < 500 }
+    );
+    if (r.status === 200 && r.data?.status === 1 && r.data?.data) {
+      const d = r.data.data;
+      return {
+        found: true,
+        complaintId: d.complaint_sap_id || d.sap_id || d.complaint_id || "N/A",
+        status: d.status || "open",
+        engineerName: d.engineer_name || null,
+      };
     }
+    return { found: false };
+  } catch (err) {
+    console.error("❌ Complaint lookup:", err.message);
+    return { found: false };
+  }
 }
 
 async function escalateToEngineer(complaintId, callerPhone) {
-    if (!complaintId) return;
-    try {
-        await axios.post(
-            `${BASE_URL}/escalate_complaint.php`,
-            {
-                complaint_id: complaintId,
-                caller_phone: callerPhone,
-                reason: "Customer called again — engineer not arrived",
-            },
-            {
-                timeout: API_TIMEOUT,
-                headers: { "Content-Type": "application/json", ...API_HEADERS },
-                validateStatus: s => s < 500,
-            }
-        );
-        console.log(`   🚨 Escalated: ${complaintId}`);
-    } catch (err) {
-        console.error("❌ Escalate:", err.message);
-    }
-}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   📝 EXTRACT ALL COMPLAINT TYPES from a single utterance
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function extractAllComplaintTitles(text) {
-    const lo = text.toLowerCase().replace(/[।.!?]/g, ' ');
-    const found = [];
-    const checks = [
-        [/(start nahi|start nhi|start nai|chalu nahi|chalu nhi|chalti nahi|chal nahi rahi|nahi chal rahi|engine not starting|band hai|band ho gayi|band pad|khari hai|chal nhi rahi|chal nhi|nhi chal|band padi|khadi padi|chal nai|chaalti nai)/, 'Engine Not Starting'],
-        [/(filter|filttar|filtar|service|servicing|seva|oil change|tel badlo|tel badalwana)/, 'Service/Filter Change'],
-        [/(dhuan|dhua|smoke|dhuen|dhuwaan)/, 'Engine Smoke'],
-        [/(garam|dhak|overheat|ubhal|tapta|zyada garam|bahut garam|dhak gyi|tapt gyi)/, 'Engine Overheating'],
-        [/(tel nikal|oil leak|rissa|risso|tel nikal ryo|oil aa raha|tel aa raha|riss ryo)/, 'Oil Leakage'],
-        [/(hydraulic|hydraulik|hydro|ailak|cylinder|bucket|boom|jack|dipper)/, 'Hydraulic System Failure'],
-        [/(race nahi|race nai|ras nahi|ras nai|accelerator|throttle|gas nahi|gas nai|pickup nahi|gas nai leti)/, 'Accelerator Problem'],
-        [/(ac nahi|ac nai|hawa nahi|thanda nahi|ac band|ac kharab|cooling nahi|thando nai)/, 'AC Not Working'],
-        [/(brake nahi|brake nhi|brake nai|rokti nahi|brake fail|brake kharab|rokti nai)/, 'Brake Failure'],
-        [/(bijli nahi|bijli nai|headlight|bulb|electrical|light nahi|battery)/, 'Electrical Problem'],
-        [/(tire|tyre|pankchar|puncture|flat tyre)/, 'Tire Problem'],
-        [/(khatakhat|khatak|thokta|awaaz aa rhi|aawaz|vibration|noise|khad khad|aavaaz aa ri|khatak aa ri)/, 'Abnormal Noise'],
-        [/(steering|steering kharab|steering nahi ghoom)/, 'Steering Problem'],
-        [/(gear|transmission|gear nahi lagta|gear slip)/, 'Transmission Problem'],
-        [/(coolant|paani nikal|water leak|radiator)/, 'Coolant Leakage'],
-        [/(battery down|battery kharab|battery nahi)/, 'Battery Problem'],
-        [/(boom|arm|dipper nahi|arm nahi uthta|arm nai uthta)/, 'Boom/Arm Failure'],
-        [/(turbo|turbocharger|black smoke)/, 'Turbocharger Issue'],
-    ];
-    for (const [rx, title] of checks) {
-        if (rx.test(lo) || rx.test(text)) {
-            if (!found.includes(title)) found.push(title);
-        }
-    }
-    return found;
+  if (!complaintId) return;
+  try {
+    await axios.post(
+      `${BASE_URL}/escalate_complaint.php`,
+      {
+        complaint_id: complaintId,
+        caller_phone: callerPhone,
+        reason: "Customer called again — engineer not arrived",
+      },
+      {
+        timeout: API_TIMEOUT,
+        headers: { "Content-Type": "application/json", ...API_HEADERS },
+        validateStatus: (s) => s < 500,
+      }
+    );
+    console.log(`   🚨 Escalated: ${complaintId}`);
+  } catch (err) {
+    console.error("❌ Escalate:", err.message);
+  }
 }
 
 async function submitComplaint(callData) {
-    try {
-        const data = callData.extractedData;
-        const c = callData.customerData || {};
-        if (!data.job_location) data.job_location = "Onsite";
+  try {
+    const data = callData.extractedData;
+    const c = callData.customerData || {};
+    if (!data.job_location) data.job_location = "Onsite";
 
-        const payload = {
-            machine_no: data.machine_no || "Unknown",
-            customer_name: data.customer_name || c.name || "Unknown",
-            caller_name: data.customer_name || c.name || "Customer",
-            caller_no: data.customer_phone || c.phone || callData.callingNumber || "Unknown",
-            contact_person: data.customer_name || c.name || "Customer",
-            contact_person_number: data.customer_phone || c.phone || callData.callingNumber || "Unknown",
-            machine_model: c.model || "Unknown",
-            sub_model: c.subModel || "NA",
-            installation_date: c.installationDate || "2025-01-01",
-            machine_type: c.machineType || "Warranty",
-            city_id: data.city_id || "4",
-            complain_by: "Customer",
-            machine_status: data.machine_status || "Running With Problem",
-            job_location: data.job_location,
-            branch: data.branch || "JAIPUR",
-            outlet: data.outlet || "JAIPUR",
-            complaint_details: data.complaint_details || "Not provided",
-            complaint_title: data.complaint_title || "General Problem",
-            sub_title: data.complaint_subtitle || "Other",
-            business_partner_code: c.businessPartnerCode || "NA",
-            complaint_sap_id: "NA",
-            machine_location_address: data.machine_location_address || "Not provided",
-            pincode: "0",
-            service_date: "", from_time: "", to_time: "",
-        };
-        if (data.lat != null && data.lng != null) {
-            payload.job_open_lat = data.lat;
-            payload.job_open_lng = data.lng;
-            payload.job_close_lat = data.lat;
-            payload.job_close_lng = data.lng;
-        }
+    const payload = {
+      machine_no: data.machine_no || "Unknown",
+      customer_name: data.customer_name || c.name || "Unknown",
+      caller_name: data.customer_name || c.name || "Customer",
+      caller_no: data.customer_phone || c.phone || callData.callingNumber || "Unknown",
+      contact_person: data.customer_name || c.name || "Customer",
+      contact_person_number: data.customer_phone || c.phone || callData.callingNumber || "Unknown",
+      machine_model: c.model || "Unknown",
+      sub_model: c.subModel || "NA",
+      installation_date: c.installationDate || "2025-01-01",
+      machine_type: c.machineType || "Warranty",
+      city_id: data.city_id || "4",
+      complain_by: "Customer",
+      machine_status: data.machine_status || "Running With Problem",
+      job_location: data.job_location,
+      branch: data.branch || "JAIPUR",
+      outlet: data.outlet || "JAIPUR",
+      complaint_details: data.complaint_details || data.complaint_title || "Not provided",
+      complaint_title: data.complaint_title || "General Problem",
+      sub_title: data.complaint_subtitle || "Other",
+      business_partner_code: c.businessPartnerCode || "NA",
+      complaint_sap_id: "NA",
+      machine_location_address: data.machine_location_address || "Not provided",
+      pincode: "0",
+      service_date: "",
+      from_time: "",
+      to_time: "",
+    };
 
-        console.log("📤 Submitting:", JSON.stringify(payload, null, 2));
-
-        const r = await axios.post(COMPLAINT_URL, payload, {
-            timeout: API_TIMEOUT,
-            headers: { "Content-Type": "application/json", ...API_HEADERS },
-            validateStatus: s => s < 500,
-        });
-
-        if (r.status === 200 && r.data?.status === 1) {
-            const sapId = r.data.data?.complaint_sap_id || r.data.data?.sap_id;
-            console.log(`✅ Complaint submitted — SAP: ${sapId}`);
-            return { success: true, sapId, jobId: r.data.data?.job_id };
-        }
-
-        console.error("❌ API error:", r.data?.message);
-        return { success: false };
-
-    } catch (err) {
-        console.error("❌ Submit failed:", err.message);
-        return { success: false };
+    if (data.lat != null && data.lng != null) {
+      payload.job_open_lat = data.lat;
+      payload.job_open_lng = data.lng;
+      payload.job_close_lat = data.lat;
+      payload.job_close_lng = data.lng;
     }
+
+    console.log("📤 Submitting:", JSON.stringify(payload, null, 2));
+
+    const r = await axios.post(COMPLAINT_URL, payload, {
+      timeout: API_TIMEOUT,
+      headers: { "Content-Type": "application/json", ...API_HEADERS },
+      validateStatus: (s) => s < 500,
+    });
+
+    if (r.status === 200 && r.data?.status === 1) {
+      const sapId = r.data.data?.complaint_sap_id || r.data.data?.sap_id;
+      console.log(`✅ Complaint submitted — SAP: ${sapId}`);
+      return { success: true, sapId, jobId: r.data.data?.job_id };
+    }
+
+    console.error("❌ API error:", r.data?.message);
+    return { success: false };
+  } catch (err) {
+    console.error("❌ Submit failed:", err.message);
+    return { success: false };
+  }
 }
 
 export default router;
