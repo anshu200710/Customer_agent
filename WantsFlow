@@ -1,105 +1,890 @@
-# 📞 AI Agent Test Conversations (Only Dialogues)
+# 📞 JCB Voice Agent — 50 Conversation Flows
+> Rajesh Motors | AI Agent: Priya | Language: Hinglish
 
 ---
 
-## 🧪 TC-01
-
-Agent: Namaste ji, Rajesh Motors mein aapka swagat hai. Kya seva kar sakti hun?  
-User: Mujhe complaint register karni thi. Machine start nahi ho rahi.  
-Agent: Bilkul ji. Machine ka chassis number bataiye.  
-User: 3305447  
-Agent: Ji, ye number theek hai jisme last mein 59 aata hai?  
-User: Haan ji, sahi hai.  
-Agent: Aur shahar kaunsa hai ji?  
-User: Bhilwara  
-Agent: Complaint register ho gayi ji. Number hai 1234. Engineer jaldi aayega. Dhanyavaad!  
+## 🟢 NORMAL FLOW (Happy Path)
 
 ---
 
-## 🧪 TC-02
+### TC-01 — Perfect flow, complaint registered smoothly
+> Ideal happy path. All 4 data points collected in sequence.
 
-Agent: Namaste ji. Chassis number bataiye.  
-User: Machine number hai 3305 447.  
-Agent: Ji, ye number theek hai jisme last mein 59 aata hai?  
-User: Haan.  
-
----
-
-## 🧪 TC-03
-
-Agent: Namaste ji. Chassis number bataiye.  
-User: Chassis number pata nahi mujhe.  
-Agent: Koi baat nahi ji. Ye number theek hai jisme last mein 47 aata hai?  
-User: Haan.  
-Agent: Kya problem hai machine mein ji?  
+Agent: Namaste ji, Rajesh Motors mein aapka swagat hai. Kya seva kar sakti hun?
+User: Mujhe complaint register karni thi. Machine start nahi ho rahi.
+Agent: Bilkul ji. Machine ka chassis number bataiye.
+User: 3305447
+Agent: Ji, ye number theek hai jisme last mein 47 aata hai?
+User: Haan ji, sahi hai.
+Agent: Aur shahar kaunsa hai ji?
+User: Bhilwara
+Agent: Acha ji, aur aapka phone number bataiye.
+User: 9876543210
+Agent: Complaint register ho gayi ji. Number hai 1234. Engineer jaldi aayega. Dhanyavaad!
 
 ---
 
-## 🧪 TC-04
+### TC-02 — User gives all info in one sentence
+> User volunteers problem, location and number upfront. Agent skips redundant questions.
 
-Agent: Namaste ji. Chassis number bataiye.  
-User: 9999111  
-Agent: Ye number nahi mila ji. Sahi chassis number bataiye.  
-User: 8888222  
-Agent: Ye bhi nahi mila ji. Ek baar aur check kijiye.  
-User: 7777333  
-Agent: Chassis nahi mila ji. Engineer ko bhej raha hun. Dhanyavaad!  
-
----
-
-## 🧪 TC-05
-
-Agent: Namaste ji. Chassis number bataiye.  
-User: Meri machine band hai. Bhilwara. Number 9876543210.  
-Agent: Machine number nahi mila ji. Sahi chassis number bataiye.  
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Bhilwara mein hun, machine ka hydraulic kaam nahi kar raha, chassis 3305447 hai, number 9811112222.
+Agent: Ji, ye chassis theek hai jisme last mein 47 aata hai?
+User: Haan.
+Agent: Complaint register ho gayi ji. Number hai 5521. Engineer jaldi aayega. Dhanyavaad!
 
 ---
 
-## 🧪 TC-06
+### TC-03 — User gives problem details step by step
+> Multiple problems listed — agent notes all without repeating back each one.
 
-Agent: Kya problem hai machine mein ji?  
-User: Engine start nahi hoti, tel nikal raha hai, AC bhi kharab hai, brake bhi nahi lagta, aur badi awaaz aa rahi hai.  
-Agent: Ji, sab note kar liya. Shahar kaunsa hai?  
-
----
-
-## 🧪 TC-07
-
-Agent: Kya problem hai machine mein ji?  
-User: Engine start nahi ho rahi.  
-Agent: Achha ji. Aur koi problem?  
-User: Haan, hydraulic bhi nahi chal raha. Gear bhi slip karta hai.  
-
----
-
-## 🧪 TC-08
-
-Agent: Namaste ji. Chassis number bataiye.  
-User: Maine pehle complaint ki thi. Engineer abhi tak nahi aaya. 2 din ho gaye.  
-Agent: Ji, complaint SAP123 mili. Nayi complaint karein ya engineer ko urgent message bhejein?  
-User: Engineer ko urgent message bhejo.  
-Agent: Ji bilkul. Engineer ko urgent message bhej diya. Jaldi aayega. Dhanyavaad ji!  
+Agent: Kya seva kar sakti hun ji?
+User: Engine start nahi hoti, tel nikal raha hai, AC bhi kharab hai.
+Agent: Ji, sab note kar liya. Machine ka chassis number bataiye.
+User: 3305447
+Agent: Ye number theek hai jisme last mein 47 aata hai?
+User: Haan.
+Agent: Aapka shahar?
+User: Ajmer
+Agent: Phone number bataiye ji.
+User: 8800001111
+Agent: Complaint register ho gayi ji. Number hai 3312. Engineer jaldi aayega. Dhanyavaad!
 
 ---
 
-## 🧪 TC-09
+### TC-04 — User confirms all details before registering
+> User double-checks before confirming. Agent is patient.
 
-Agent: Namaste ji. Chassis number bataiye.  
-User: 3305447  
-Agent: Ji, ye number theek hai jisme last mein 59 aata hai?  
-User: Nahi, galat number hai. Dusra dena hai.  
-Agent: Ji, naya number bata dijiye.  
-User: 9876543210  
-
----
-
-## 🧪 TC-10
-
-Agent: Machine ka chassis number bataiye.  
-User: Ek minute, dhundh raha hun.  
-Agent: Ji zarur.  
-User: Haan, 3305447 hai.  
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Haan, machine band hai. Chassis 3305447, Jodhpur, number 9090909090.
+Agent: Ji, chassis mein last mein 47 aata hai — ye sahi hai?
+User: Haan ji.
+Agent: Aur problem kya hai machine mein?
+User: Machine bilkul start nahi ho rahi.
+Agent: Complaint register ho gayi ji. Number hai 7743. Engineer jaldi aayega. Dhanyavaad!
 
 ---
 
-# ✅ End of Conversations
+### TC-05 — Short and confident user, minimal conversation
+> User is experienced, answers quickly. Agent stays brief.
+
+Agent: Namaste ji. Chassis number bataiye.
+User: 3305447
+Agent: Last mein 47 hai — theek hai?
+User: Haan.
+Agent: Problem?
+User: Hydraulic down.
+Agent: Shahar?
+User: Kota
+Agent: Number?
+User: 7001234567
+Agent: Complaint register ho gayi. Number 4421. Dhanyavaad!
+
+---
+
+## 🔵 CHASSIS ISSUES
+
+---
+
+### TC-06 — Chassis not found, 3 wrong attempts then escalate
+> After 3 failed attempts, agent registers complaint without chassis and sends engineer.
+
+Agent: Namaste ji. Chassis number bataiye.
+User: 9999111
+Agent: Ye number nahi mila ji. Ek baar phir bataiye.
+User: 8888222
+Agent: Ye bhi nahi mila ji. Ek baar aur check karein.
+User: 7777333
+Agent: Chassis nahi mila ji. Engineer ko bhej raha hun, wo directly aayega. Dhanyavaad!
+
+---
+
+### TC-07 — User doesn't know chassis number
+> Agent uses guessing technique — confirms last 2 digits creatively.
+
+Agent: Namaste ji. Chassis number bataiye.
+User: Chassis number pata nahi mujhe.
+Agent: Koi baat nahi ji. Machine ki plate pe ek number likha hota hai. Kya last mein 47 aata hai?
+User: Haan ji, wahi hai.
+Agent: Aur problem kya hai?
+User: Machine start nahi ho rahi.
+Agent: Shahar?
+User: Udaipur
+Agent: Phone number?
+User: 9811223344
+Agent: Complaint register ho gayi ji. Number hai 6612. Dhanyavaad!
+
+---
+
+### TC-08 — User gives 10-digit number by mistake
+> 10 digits is a phone number, not chassis. Agent politely rejects and asks again.
+
+Agent: Namaste ji. Chassis number bataiye.
+User: 9876543210
+Agent: Ji, chassis number 7 digits ka hota hai. Kya aap phir se check kar sakte hain?
+User: Oh, haan. 3305447 hai.
+Agent: Ye theek hai, last mein 47 — sahi hai?
+User: Haan.
+Agent: Problem bataiye ji.
+User: Gear slip karta hai.
+Agent: Shahar?
+User: Sikar
+Agent: Number?
+User: 9988776655
+Agent: Complaint register ho gayi. Number 2231. Dhanyavaad!
+
+---
+
+### TC-09 — User corrects chassis after confirmation
+> User first confirms, then says wrong number. Agent gracefully accepts correction.
+
+Agent: Namaste ji. Chassis number bataiye.
+User: 3305447
+Agent: Ye theek hai jisme last mein 47 aata hai?
+User: Nahi, galat number hai. Dusra dena hai.
+Agent: Ji zarur, naya number bata dijiye.
+User: 4412398
+Agent: Ye theek hai jisme last mein 98 aata hai?
+User: Haan.
+Agent: Problem bataiye.
+User: Engine overheating.
+Agent: Shahar?
+User: Bikaner
+Agent: Number?
+User: 7007007000
+Agent: Complaint register ho gayi. Number 8801. Dhanyavaad!
+
+---
+
+### TC-10 — Chassis given in parts with spaces
+> User says '3305 447' with a gap. Agent handles it as one number.
+
+Agent: Chassis number bataiye.
+User: Machine number hai 3305 447.
+Agent: Ji, ye number theek hai jisme last mein 47 aata hai?
+User: Haan.
+Agent: Problem?
+User: Smoke aa raha hai engine se.
+Agent: Shahar?
+User: Nagaur
+Agent: Number?
+User: 9922334455
+Agent: Complaint register ho gayi. Number 3390. Dhanyavaad!
+
+---
+
+### TC-11 — Operator calling, not owner
+> Operator is calling on behalf of owner. Agent stays flexible.
+
+Agent: Namaste ji. Chassis number bataiye.
+User: Main operator hun. Owner ka number nahi hai. Chassis 3305447 hai.
+Agent: Ji, ye theek hai jisme last mein 47 aata hai?
+User: Haan.
+Agent: Problem?
+User: Machine start nahi ho rahi subah se.
+Agent: Aapka apna number dein ji.
+User: 9811001100
+Agent: Shahar?
+User: Churu
+Agent: Complaint register ho gayi. Number 4401. Dhanyavaad!
+
+---
+
+### TC-12 — User gives chassis with letters mixed in
+> User says 'JCB3305447'. Agent extracts 7-digit number.
+
+Agent: Chassis number bataiye.
+User: JCB3305447 hai number.
+Agent: Ji, 3305447 — ye theek hai jisme last mein 47 aata hai?
+User: Haan bilkul.
+Agent: Problem?
+User: Hydraulic oil leak.
+Agent: Shahar?
+User: Barmer
+Agent: Number?
+User: 9844556677
+Agent: Complaint register ho gayi. Number 6678. Dhanyavaad!
+
+---
+
+## 🔴 ANGRY / FRUSTRATED CUSTOMER
+
+---
+
+### TC-13 — Engineer hasn't come in 2 days
+> Agent apologizes, offers urgent escalation. Customer accepts.
+
+Agent: Namaste ji. Chassis number bataiye.
+User: Maine pehle complaint ki thi. Engineer abhi tak nahi aaya. 2 din ho gaye.
+Agent: Maafi chahti hun ji, aapko pareshani hui. Complaint number hai aapke paas?
+User: SAP123
+Agent: Ji, complaint mili. Nayi complaint karein ya engineer ko urgent message bhejein?
+User: Engineer ko urgent message bhejo.
+Agent: Ji bilkul. Urgent message bhej diya. Engineer jaldi aayega. Dhanyavaad ji!
+
+---
+
+### TC-14 — Customer threatens to complain to JCB directly
+> Agent stays calm, acknowledges frustration, escalates without argument.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Kuch kaam nahi karta tumhara. JCB ke directly complain karunga.
+Agent: Samajh raha hun ji, aapko kaafi pareshani hui. Main abhi priority pe le leta hun. Chassis number bataiye.
+User: 3305447
+Agent: Theek hai jisme 47 aata hai?
+User: Haan.
+Agent: Problem?
+User: Machine 3 din se band hai.
+Agent: Shahar?
+User: Tonk
+Agent: Number?
+User: 9810001234
+Agent: Complaint escalate ho gayi ji. Priority pe hai. Number 9901. Dhanyavaad!
+
+---
+
+### TC-15 — Customer shouts, very rude
+> Agent maintains calm, uses empathy, gets back to task.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Bahut bakwaas hai yaar! 4-5 baar call kar chuka hun! Kuch nahi hota!
+Agent: Samajh rahi hun ji, bahut frustrating hai ye. Maafi chahti hun. Main abhi personally handle karti hun. Chassis number bataiye.
+User: 3305447
+Agent: Last mein 47 — sahi hai?
+User: Haan.
+Agent: Problem aur location bataiye.
+User: Jaipur. Engine start nahi. Kal se khadi hai.
+Agent: Number?
+User: 9800123456
+Agent: Complaint urgent pe register ho gayi. Number 1109. Engineer aaj hi aayega. Dhanyavaad ji!
+
+---
+
+### TC-16 — Customer demands refund
+> Agent stays in scope — redirects to complaint flow, doesn't handle refund claims.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Mujhe refund chahiye. Machine kaam nahi karti, paise waste ho rahe hain.
+Agent: Ji, aapki takleef samajh aati hai. Main complaint register karti hun aur engineer bhejti hun. Chassis number bataiye.
+User: 3305447
+Agent: Theek hai, last mein 47?
+User: Haan.
+Agent: Shahar?
+User: Pali
+Agent: Number?
+User: 9944556677
+Agent: Complaint register ho gayi. Number 4453. Refund ke liye engineer visit ke baad process hoga. Dhanyavaad ji!
+
+---
+
+### TC-17 — Customer says no one picks up the phone
+> Agent apologizes for service gap and registers complaint on priority.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Baar baar call karta hun, koi uthata hi nahi.
+Agent: Ji, maafi chahti hun is inconvenience ke liye. Main abhi complaint register karti hun. Chassis number?
+User: 3305447
+Agent: Last mein 47 — theek hai?
+User: Haan.
+Agent: Problem aur shahar?
+User: Engine smoke. Sawai Madhopur.
+Agent: Number?
+User: 9933221100
+Agent: Complaint register ho gayi. Number 7712. Priority pe hai. Dhanyavaad ji!
+
+---
+
+## 🟣 SPECIAL SITUATIONS
+
+---
+
+### TC-18 — User says 'ek minute' mid-conversation
+> User asks to wait while looking for chassis. Agent waits patiently.
+
+Agent: Chassis number bataiye.
+User: Ek minute, dhundh raha hun.
+Agent: Ji zarur.
+User: Haan, 3305447 hai.
+Agent: Theek hai, last mein 47?
+User: Haan.
+Agent: Problem?
+User: Machine band hai.
+Agent: Shahar?
+User: Jhunjhunu
+Agent: Number?
+User: 9977665544
+Agent: Complaint register ho gayi. Number 5560. Dhanyavaad!
+
+---
+
+### TC-19 — User asks agent to repeat last sentence
+> Agent cleanly repeats last question.
+
+Agent: Aur aapka shahar kaunsa hai ji?
+User: Kya kaha? Dobara bolo.
+Agent: Ji, aapka shahar kaunsa hai?
+User: Jaipur
+Agent: Phone number bataiye ji.
+User: 9955443322
+Agent: Complaint register ho gayi. Number 8822. Dhanyavaad!
+
+---
+
+### TC-20 — User asks who the agent is
+> Agent introduces herself briefly and gets back to task.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Tum kaun ho?
+Agent: Main Priya hun, Rajesh Motors se. JCB machine ki complaint ke liye hum yahan hain. Chassis number bataiye.
+User: Achha theek hai. 3305447.
+Agent: Last mein 47 — sahi hai?
+User: Haan.
+Agent: Problem?
+User: Boom nahi chal raha.
+Agent: Shahar?
+User: Sriganganagar
+Agent: Number?
+User: 9800005555
+Agent: Complaint register ho gayi. Number 3341. Dhanyavaad!
+
+---
+
+### TC-21 — User asks about company location
+> Agent answers briefly, stays on task.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Rajesh Motors kahan hai?
+Agent: Rajasthan ke sabhi main cities mein hain ji. Aapke city ka engineer aayega. Chassis number bataiye.
+User: 3305447
+Agent: Last mein 47 — theek hai?
+User: Haan.
+Agent: Problem?
+User: Arm nahi uth raha.
+Agent: Shahar?
+User: Hanumangarh
+Agent: Number?
+User: 9866554433
+Agent: Complaint register ho gayi. Number 2289. Dhanyavaad!
+
+---
+
+### TC-22 — User asks how long engineer will take
+> Agent gives realistic estimate, keeps registering complaint.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Kitna time lagega engineer ko aane mein?
+Agent: Normal mein 2-4 ghante ji, urgent case mein jaldi. Pehle complaint register karte hain. Chassis number?
+User: 3305447
+Agent: Last mein 47 — sahi hai?
+User: Haan.
+Agent: Problem?
+User: Hydraulic choke ho gaya.
+Agent: Shahar?
+User: Bhilwara
+Agent: Number?
+User: 9922003344
+Agent: Complaint register ho gayi. Number 4412. Engineer 2-4 ghante mein aayega. Dhanyavaad!
+
+---
+
+### TC-23 — User calls by mistake / wrong number
+> Agent politely clarifies scope and ends call.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Haan main Sharma ji se baat karna chahta hun.
+Agent: Ji, yahan Rajesh Motors ki JCB service line hai. Sharma ji yahan nahi hain. Kya machine se related koi kaam tha?
+User: Nahi, galat number lag gaya.
+Agent: Koi baat nahi ji. Dhanyavaad!
+User: Theek hai.
+Agent: Alvida ji!
+
+---
+
+### TC-24 — User speaks in English
+> Agent responds in Hinglish to stay accessible.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Hi, I want to register a complaint for my JCB machine.
+Agent: Ji zarur. Please bataiye chassis number.
+User: It's 3305447.
+Agent: Theek hai, last mein 47 aata hai — correct?
+User: Yes.
+Agent: What is the problem?
+User: Machine is not starting.
+Agent: Aur shahar?
+User: Jaipur
+Agent: Phone number please.
+User: 9811001100
+Agent: Complaint register ho gayi ji. Number hai 7721. Engineer jaldi aayega. Thank you!
+
+---
+
+### TC-25 — User asks about warranty
+> Agent acknowledges, stays in scope, registers complaint.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Machine warranty mein hai. Free mein theek hogi na?
+Agent: Warranty ke baare mein engineer visit ke baad confirm hoga ji. Pehle complaint register karte hain. Chassis number?
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Problem?
+User: Overheating.
+Agent: Shahar?
+User: Jalore
+Agent: Number?
+User: 9800111222
+Agent: Complaint register ho gayi. Number 5531. Dhanyavaad!
+
+---
+
+### TC-26 — User is on site, noisy background
+> Agent asks to confirm clearly, stays patient with repetitions.
+
+Agent: Namaste ji. Chassis number bataiye.
+User: [background noise] 3305 ... 447
+Agent: Ji, sunayi de raha hai. Ye theek hai jisme last mein 47 aata hai?
+User: Haan ji, sahi hai.
+Agent: Problem bataiye.
+User: [noise] Engine ... start nahi ho rahi.
+Agent: Ji samajh gaya — engine start nahi. Shahar?
+User: Alwar
+Agent: Number?
+User: 9977001122
+Agent: Complaint register ho gayi. Number 6612. Dhanyavaad!
+
+---
+
+### TC-27 — User hangs up mid-call and calls back
+> Agent starts fresh, doesn't assume previous context.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Haan main pehle call kar raha tha, line cut ho gayi.
+Agent: Koi baat nahi ji. Dobara bataiye — chassis number kya hai?
+User: 3305447
+Agent: Last mein 47 — sahi hai?
+User: Haan.
+Agent: Problem?
+User: Bucket leak.
+Agent: Shahar?
+User: Bundi
+Agent: Number?
+User: 9966778899
+Agent: Complaint register ho gayi. Number 3377. Dhanyavaad!
+
+---
+
+### TC-28 — User is elderly, speaks slowly
+> Agent is patient, confirms each piece, doesn't rush.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Haan beti... machine kharab ho gayi hai...
+Agent: Ji bilkul, main help karungi. Chassis number bataiye, machine pe ek plate pe likha hoga.
+User: ... 3305447 likha hai.
+Agent: Bahut achha ji. Last mein 47 aata hai — ye sahi hai?
+User: Haan beti.
+Agent: Kya problem hai?
+User: Start nahi ho rahi kab se.
+Agent: Aapka shahar?
+User: Kishangarh
+Agent: Phone number bataiye ji.
+User: 9800111333
+Agent: Complaint register ho gayi ji. Number hai 4400. Engineer aayega jaldi. Dhanyavaad ji!
+
+---
+
+## 🟠 EDGE CASES
+
+---
+
+### TC-29 — User gives complaint number from previous call
+> Agent looks up complaint, offers escalation options.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Meri complaint pehle se hai — number 5521.
+Agent: Ji, complaint mili. Nayi complaint karein ya engineer ko urgent message bhejein?
+User: Urgent message bhejo.
+Agent: Ji, urgent message bhej diya. Engineer jaldi pahunchega. Dhanyavaad!
+
+---
+
+### TC-30 — User wants to cancel previous complaint
+> Agent confirms cancellation request and processes it.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Meri complaint cancel karni hai.
+Agent: Ji, complaint number bataiye.
+User: 5521
+Agent: Complaint 5521 cancel ho gayi ji. Koi aur kaam ho to bataiye.
+User: Nahi, theek hai.
+Agent: Dhanyavaad ji!
+
+---
+
+### TC-31 — User asks for same engineer as last time
+> Agent acknowledges request, notes it with complaint.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Pichli baar wali engineer ko bhejo na, Ramesh bhai ko.
+Agent: Ji, request note kar leti hun. Chassis number bataiye.
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Problem?
+User: Same problem wapas aa gayi.
+Agent: Shahar?
+User: Jaipur
+Agent: Number?
+User: 9800001234
+Agent: Complaint register ho gayi. Number 8823. Request noted. Dhanyavaad!
+
+---
+
+### TC-32 — Two machines, user wants two complaints
+> Agent registers first, then offers to register second.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Do machine kharab hain. Dono ki complaint chahiye.
+Agent: Ji zarur. Pehli machine ka chassis number bataiye.
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Problem?
+User: Engine start nahi.
+Agent: Shahar?
+User: Dausa
+Agent: Number?
+User: 9933445566
+Agent: Pehli complaint register ho gayi. Number 1121. Ab doosri machine ka chassis number bataiye.
+User: 4412398
+Agent: Last mein 98?
+User: Haan.
+Agent: Problem?
+User: Hydraulic down.
+Agent: Doosri complaint bhi register ho gayi. Number 1122. Dhanyavaad!
+
+---
+
+### TC-33 — User gives full address instead of city
+> Agent extracts city from full address.
+
+Agent: Shahar kaunsa hai ji?
+User: Ward number 5, main bazaar, Bhilwara, Rajasthan.
+Agent: Bhilwara noted ji. Phone number bataiye.
+User: 9900001111
+Agent: Complaint register ho gayi. Number 6634. Dhanyavaad!
+
+---
+
+### TC-34 — User doesn't have a phone, gives neighbor's number
+> Agent accepts any contact number.
+
+Agent: Phone number bataiye ji.
+User: Mera khud ka nahi hai. Padosi ka likh lo — 9811001100.
+Agent: Ji, note kar liya. Complaint register ho gayi. Number 7723. Dhanyavaad!
+
+---
+
+### TC-35 — Machine is on rent, caller is not the owner
+> Agent stays practical — registers complaint regardless of ownership.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Machine rent pe li hai, malik ka number nahi hai. Complaint ho sakti hai?
+Agent: Ji bilkul, aapke number pe bhi ho sakti hai. Chassis number bataiye.
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Problem?
+User: Bucket nahi uth raha.
+Agent: Shahar?
+User: Beawar
+Agent: Aapka number?
+User: 9966112233
+Agent: Complaint register ho gayi. Number 4451. Dhanyavaad!
+
+---
+
+### TC-36 — User asks for SMS confirmation
+> Agent confirms SMS will be sent after complaint.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: SMS aayega complaint ka?
+Agent: Ji, complaint register hone ke baad SMS aa jaata hai. Chassis number bataiye.
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Problem?
+User: Gear issue.
+Agent: Shahar?
+User: Jhalawar
+Agent: Number?
+User: 9988001122
+Agent: Complaint register ho gayi. Number 5592. SMS bhi aayega. Dhanyavaad!
+
+---
+
+### TC-37 — User gives number digit by digit slowly
+> Agent patiently assembles the number.
+
+Agent: Chassis number bataiye.
+User: 3 ... 3 ... 0 ... 5 ... 4 ... 4 ... 7
+Agent: Ji, 3305447 — last mein 47 aata hai — sahi hai?
+User: Haan.
+Agent: Problem?
+User: Engine oil leak.
+Agent: Shahar?
+User: Sirohi
+Agent: Number?
+User: 9900112233
+Agent: Complaint register ho gayi. Number 3312. Dhanyavaad!
+
+---
+
+### TC-38 — User asks if engineer will call before coming
+> Agent confirms engineer calls first.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Engineer pehle call karega ya seedha aa jaayega?
+Agent: Ji, engineer pehle call karega aapko. Complaint register karte hain. Chassis number bataiye.
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Problem?
+User: AC kaam nahi kar raha.
+Agent: Shahar?
+User: Bharatpur
+Agent: Number?
+User: 9977445566
+Agent: Complaint register ho gayi. Number 6643. Engineer pehle call karega. Dhanyavaad!
+
+---
+
+### TC-39 — Machine is working now but user wants to report
+> Agent registers complaint noting machine is now working.
+
+Agent: Kya problem hai machine mein ji?
+User: Abhi theek ho gayi hai, lekin kal band thi. Report karna chahta hun.
+Agent: Ji, note kar lete hain. Shahar?
+User: Dholpur
+Agent: Number?
+User: 9811220033
+Agent: Complaint registered ji. Number 2278. Preventive check ke liye engineer bhi aayega. Dhanyavaad!
+
+---
+
+### TC-40 — User asks about service charges
+> Agent deflects charge question, stays in complaint flow.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Charges kitne lagenge repair ke?
+Agent: Ji, charges engineer visit ke baad confirm honge. Pehle complaint register karte hain. Chassis number?
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Problem?
+User: Boom cylinder leak.
+Agent: Shahar?
+User: Karauli
+Agent: Number?
+User: 9922334411
+Agent: Complaint register ho gayi. Number 7731. Dhanyavaad!
+
+---
+
+### TC-41 — Silent user, no speech detected twice
+> Agent gently prompts twice, then redirects.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: [silence]
+Agent: Ji? Kuch suna nahi. Bataiye kaise help karun.
+User: [silence]
+Agent: Ji, agar koi takleef aa rahi hai to Rajesh Motors ke helpline pe call karein. Dhanyavaad!
+
+---
+
+### TC-42 — User asks for supervisor
+> Agent acknowledges, notes escalation, continues complaint registration.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Supervisor se baat karni hai.
+Agent: Ji, main supervisor ko message karungi. Tab tak complaint register karein? Chassis number bataiye.
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Problem?
+User: Brake fail.
+Agent: Shahar?
+User: Baran
+Agent: Number?
+User: 9800556677
+Agent: Complaint register ho gayi. Number 9912. Supervisor ko bhi message bheja. Dhanyavaad!
+
+---
+
+### TC-43 — User unsure if their machine type is supported
+> Agent doesn't validate machine type — accepts chassis as given.
+
+Agent: Chassis number bataiye.
+User: Ye Tata machine ka number hai — kya chalega?
+Agent: Ji, jo bhi number ho wahi bataiye, register kar lete hain.
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Problem?
+User: Engine issue.
+Agent: Shahar?
+User: Pratapgarh
+Agent: Number?
+User: 9966001122
+Agent: Complaint register ho gayi. Number 5543. Dhanyavaad!
+
+---
+
+### TC-44 — Female operator calling
+> Agent treats equally, no change in tone.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Main bhi machine chalati hun, aaj band ho gayi.
+Agent: Ji bilkul. Chassis number bataiye.
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Kya problem aa rahi?
+User: Engine smoke aur sound.
+Agent: Shahar?
+User: Ajmer
+Agent: Number?
+User: 9944001122
+Agent: Complaint register ho gayi. Number 4488. Dhanyavaad ji!
+
+---
+
+### TC-45 — User asks if engineer comes on Sunday / holiday
+> Agent doesn't promise specific day, gives realistic response.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Aaj Sunday hai, engineer aayega?
+Agent: Ji, urgent complaint pe Sunday ko bhi try karte hain. Register karte hain. Chassis number?
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Problem?
+User: Engine nahi chalu hoti.
+Agent: Shahar?
+User: Jaipur
+Agent: Number?
+User: 9855441122
+Agent: Complaint register ho gayi. Number 6631. Urgent flag laga diya. Dhanyavaad!
+
+---
+
+### TC-46 — User mixes up phone number and chassis
+> Agent gently identifies the confusion and corrects.
+
+Agent: Chassis number bataiye.
+User: 9876543210 hai.
+Agent: Ji, ye 10 digit ka lag raha hai — ye phone number toh nahi hai? Chassis 7 digit ka hota hai.
+User: Oh haan, chassis hai 3305447.
+Agent: Theek hai, last mein 47 — sahi hai?
+User: Haan.
+Agent: Problem?
+User: Hydraulic slow.
+Agent: Shahar?
+User: Pali
+Agent: Phone number?
+User: 9876543210
+Agent: Complaint register ho gayi. Number 2230. Dhanyavaad!
+
+---
+
+### TC-47 — Vague request — 'just check if my machine is ok'
+> Agent clarifies and converts to a complaint/inspection request.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Bas ek baar check karwana tha machine ko.
+Agent: Ji zarur, preventive check ke liye bhi engineer bhej sakte hain. Chassis number bataiye.
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Koi specific problem hai ya general check?
+User: General check only.
+Agent: Shahar?
+User: Dungarpur
+Agent: Number?
+User: 9933221100
+Agent: Service visit register ho gayi. Number 3310. Dhanyavaad!
+
+---
+
+### TC-48 — Call drops and auto-reconnects mid-complaint
+> Agent re-confirms last collected info before continuing.
+
+Agent: Namaste ji. Chassis number bataiye.
+User: 3305447 — tab line cut ho gayi.
+Agent: Ji, 3305447 last mein 47 — sahi hai?
+User: Haan, sahi hai.
+Agent: Problem bataiye.
+User: Wahi — engine start nahi.
+Agent: Shahar?
+User: Alwar
+Agent: Number?
+User: 9922334400
+Agent: Complaint register ho gayi. Number 7745. Dhanyavaad!
+
+---
+
+### TC-49 — User prefers human agent
+> Agent empathizes and continues helping, doesn't argue.
+
+Agent: Namaste ji. Kya seva kar sakti hun?
+User: Kya main real insaan se baat kar sakta hun?
+Agent: Ji, main Priya hun aur aapki complaint register kar sakti hun. Koi problem ho to zarur batayein.
+User: Theek hai, chalta hai.
+Agent: Chassis number bataiye.
+User: 3305447
+Agent: Last mein 47?
+User: Haan.
+Agent: Problem?
+User: AC fail.
+Agent: Shahar?
+User: Kota
+Agent: Number?
+User: 9811334455
+Agent: Complaint register ho gayi. Number 8834. Dhanyavaad!
+
+---
+
+### TC-50 — User thanks and disconnects before final confirmation
+> Agent confirms quickly before line drops.
+
+Agent: Complaint register ho gayi ji. Number hai 4422. Engineer jaldi—
+User: Dhanyavaad beti, bye.
+Agent: Dhanyavaad ji! Engineer aayega. Alvida!
+
+---
+
+## 📊 Summary
+
+| Category          | Count | Description                                      |
+|-------------------|-------|--------------------------------------------------|
+| Normal Flow       | 5     | Happy paths — complaint registers smoothly       |
+| Chassis Issues    | 7     | Wrong number, unknown, letters mixed, operator   |
+| Angry Customer    | 5     | Delay, threats, shouting, refund demand          |
+| Special Situations| 11    | Wait, repeat, English, warranty, noisy, elderly  |
+| Edge Cases        | 22    | Lookup, cancel, two machines, Sunday, SMS, etc.  |
+| **Total**         | **50**|                                                  |
+
+---
+
+## 🔑 4 Required Fields for Every Complaint
+
+| Field          | Example           | Notes                              |
+|----------------|-------------------|------------------------------------|
+| Chassis Number | 3305447           | 7 digits — always confirm last 2   |
+| Problem        | Engine start nahi | Can be multiple, note all          |
+| City           | Bhilwara          | Any Rajasthan city                 |
+| Phone Number   | 9876543210        | Operator / neighbor number OK      |
+
+---
+
+*Generated: April 2026 | Rajesh Motors JCB Voice Agent | Agent Name: Priya*
