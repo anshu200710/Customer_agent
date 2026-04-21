@@ -1,20 +1,33 @@
 /**
  * knowledgeBase.js
  * ================
- * Comprehensive Knowledge Base for JCB Customer Service Agent (Priya)
- * Corrected based on real call audio analysis:
- *   - Real calls run 100+ turns — no hard cutoff at 25
- *   - Customer speech bursts avg 1-4s, max ~7.4s
- *   - Short ack turns (< 1.5s) are very common: "haan", "theek hai", "ok"
- *   - Between-turn pauses typically 0.3–1.5s
- *   - All responses must sound natural, NOT scripted
+ * Knowledge Base for JCB Voice Agent "Priya" — Rajesh Motors
+ *
+ * REWRITE NOTES (based on audio analysis of 8 real calls + 50 TC examples):
+ *
+ * AUDIO FACTS:
+ *   - 74% of all speech bursts are <0.5s  → short acks dominate
+ *   - 92% of bursts are <1.0s             → customers are terse
+ *   - Max real burst: 7.74s               → multi-complaint explanations
+ *   - Median gap between turns: 0.34s     → customers respond FAST
+ *   - Avg turns per call: 95, max: 186    → old limit of 25-60 killed calls
+ *   - Long gaps (>5s) = only 2% of gaps  → those are the BOT talking, not silence
+ *
+ * KEY DESIGN RULES FROM 50 TC EXAMPLES:
+ *   - NEVER re-ask a field already given
+ *   - Short acks ("haan", "ok") = fast-path, no LLM needed
+ *   - "nahi" at final confirm = "no more problems" = SUBMIT
+ *   - City confirmation step = REMOVED (adds turn, not in any TC example)
+ *   - Phone pre-confirmation = ask directly, then confirm last 2 digits
+ *   - Side questions → answer in 1 sentence + redirect to next field
+ *   - Angry/frustrated → empathy 1 sentence + redirect, never argue
  */
 
 export const KNOWLEDGE_BASE = {
 
-  /* ═══════════════════════════════════════════════════════════════
-     IDENTITY & INTRODUCTION
-  ═══════════════════════════════════════════════════════════════ */
+  /* ─────────────────────────────────────────────────────────────
+     IDENTITY
+  ───────────────────────────────────────────────────────────── */
   identity: {
     questions: [
       "tum kaun ho", "aap kaun ho", "tumhara naam", "aapka naam",
@@ -22,135 +35,177 @@ export const KNOWLEDGE_BASE = {
       "company ka naam", "aap kahan se ho", "tum kahan se ho",
       "service center ka naam", "rajesh motors kya hai", "aapka company",
       "hello who is this", "kon hai", "kaun hai", "aap kon hain",
-      "kaisi baat", "kaisi service", "aapka contact", "kisse baat kar raha"
+      "kisse baat kar raha", "kaun hai baat kar rahi"
     ],
-    answer: "Main Priya hun, Rajesh Motors se. JCB service ke liye aapki madad kar rahi hun."
+    answer: "Priya hun, Rajesh Motors se."
   },
 
-  /* ═══════════════════════════════════════════════════════════════
+  /* ─────────────────────────────────────────────────────────────
      COMPANY INFO
-  ═══════════════════════════════════════════════════════════════ */
+  ───────────────────────────────────────────────────────────── */
   company: {
     questions: [
       "rajesh motors kahan hai", "service center kahan hai", "branches kahan",
       "workshop kahan hai", "nearest service center", "office kahan"
     ],
-    answer: "Rajesh Motors Rajasthan ke main cities mein hai. Aapki machine ke paas ka engineer contact karega."
+    answer: "Rajesh Motors Rajasthan mein hai."
   },
 
-  /* ═══════════════════════════════════════════════════════════════
-     PURPOSE / WHAT DO YOU WANT
-  ═══════════════════════════════════════════════════════════════ */
+  /* ─────────────────────────────────────────────────────────────
+     PURPOSE
+  ───────────────────────────────────────────────────────────── */
   purpose: {
     questions: [
       "kya chahiye", "kya kaam hai", "kya karna hai", "kya reason hai",
-      "kya matlab", "kya purpose", "kyu call kiya", "kyu phone kiya",
+      "kya matlab", "kyu call kiya", "kyu phone kiya",
       "kya hai ye call", "kaisi call", "kya service", "kya help",
-      "kya kar rahe ho", "kya baat hai", "kya reason", "kya request",
-      "kuch chahiye", "kuch kaam hai", "kuch help chahiye"
+      "kya kar rahe ho", "kya baat hai", "kuch chahiye"
     ],
-    answer: "JCB machine ki service ke liye baat kar rahi hun. Chassis number bataiye."
+    answer: "JCB complaint ke liye."
   },
 
-  /* ═══════════════════════════════════════════════════════════════
+  /* ─────────────────────────────────────────────────────────────
      ENGINEER TIMING
-  ═══════════════════════════════════════════════════════════════ */
+  ───────────────────────────────────────────────────────────── */
   engineer_timing: {
     questions: [
       "engineer kab aayega", "kab aayega", "kitna time lagega", "kab tak aayega",
       "kitni der mein", "jaldi bhejo", "urgent hai", "abhi bhejo",
-      "engineer aaya nahi", "bahut der ho gayi", "2 din ho gaye", "kal se wait"
+      "engineer aaya nahi", "bahut der ho gayi", "2 din ho gaye", "kal se wait",
+      "engineer kitni der mein", "kab contact karega", "kitne ghante"
     ],
-    answer: "Complaint register hote hi engineer ko message jayega. 2-4 ghante mein contact karega."
+    answer: "2-4 ghante mein call karega."
   },
 
-  /* ═══════════════════════════════════════════════════════════════
+  /* ─────────────────────────────────────────────────────────────
      CHARGES & WARRANTY
-  ═══════════════════════════════════════════════════════════════ */
+  ───────────────────────────────────────────────────────────── */
   charges: {
     questions: [
       "kitna charge", "kitna paisa", "cost", "fee", "price lagega",
-      "warranty", "waranti", "free hai", "paid hai", "paise lagenge"
+      "paise lagenge", "kitna rupaya", "charge kya hai", "payment"
     ],
-    answer: "Engineer visit ke baad charge batayega. Warranty mein repair free hoti hai."
+    answer: "Warranty mein free hai."
   },
 
-  /* ═══════════════════════════════════════════════════════════════
+  warranty: {
+    questions: [
+      "warranty", "waranti", "warranty mein hai", "warranty ka kya",
+      "warranty cover", "warranty kab tak", "free repair"
+    ],
+    answer: "Engineer batayega."
+  },
+
+  /* ─────────────────────────────────────────────────────────────
      CHASSIS NUMBER HELP
-  ═══════════════════════════════════════════════════════════════ */
+  ───────────────────────────────────────────────────────────── */
   chassis_help: {
     questions: [
       "chassis number kahan milega", "chassis number kaise pata", "machine pe kahan",
       "number kahan likha hai", "plate kahan hai", "chassis nahi pata",
-      "number bhool gaya", "machine number kya hai", "serial number kahan"
+      "number bhool gaya", "machine number kya hai", "serial number kahan",
+      "chassis kahan dekhu", "machine ka number kahan"
     ],
-    answer: "Machine ki dashboard ya body pe ek plate hoti hai — wahan chassis number likha hota hai."
+    answer: "Machine pe plate hai, 7 digit number."
   },
 
-  /* ═══════════════════════════════════════════════════════════════
+  /* ─────────────────────────────────────────────────────────────
      PHONE NUMBER HELP
-  ═══════════════════════════════════════════════════════════════ */
+  ───────────────────────────────────────────────────────────── */
   phone_help: {
     questions: [
       "phone number kyu chahiye", "mobile kyu pooch rahe", "number ka use",
       "number kyu save", "call kyu aayega", "kya karenge is number se",
-      "number kya karna hai", "matlab kya hai", "kya kaam hai iska",
-      "kya karoge isse", "kisko call kroge", "kya reason hai"
+      "number kya karna hai", "kya kaam hai iska", "kya karoge isse"
     ],
-    answer: "Engineer ko contact karne ke liye number chahiye."
+    answer: "Engineer call ke liye."
   },
 
-  /* ═══════════════════════════════════════════════════════════════
-     COMPLAINT STATUS
-  ═══════════════════════════════════════════════════════════════ */
+  /* ─────────────────────────────────────────────────────────────
+     SMS CONFIRMATION
+  ───────────────────────────────────────────────────────────── */
+  sms: {
+    questions: [
+      "sms aayega", "message aayega", "confirmation aayega", "proof milega",
+      "complaint number kahan", "kaise pata chalega", "sms bhejo"
+    ],
+    answer: "SMS aayega."
+  },
+
+  /* ─────────────────────────────────────────────────────────────
+     ENGINEER CALL BEFORE COMING (TC-38)
+  ───────────────────────────────────────────────────────────── */
+  engineer_call: {
+    questions: [
+      "engineer pehle call karega", "call karega ya seedha", "pehle batayega",
+      "bina bataye aayega", "inform karega", "call aayega pehle"
+    ],
+    answer: "Pehle call karega."
+  },
+
+  /* ─────────────────────────────────────────────────────────────
+     SUNDAY / HOLIDAY (TC-45)
+  ───────────────────────────────────────────────────────────── */
+  sunday: {
+    questions: [
+      "aaj sunday hai", "sunday ko aayega", "holiday", "band din",
+      "chutti ka din", "sunday service", "holiday service"
+    ],
+    answer: "Sunday bhi aayega."
+  },
+
+  /* ─────────────────────────────────────────────────────────────
+     COMPLAINT STATUS / EXISTING COMPLAINT
+  ───────────────────────────────────────────────────────────── */
   complaint_status: {
     questions: [
       "pehle complaint", "pehli complaint", "already complaint", "complaint kar diya",
       "complaint ki thi", "pichla complaint", "status kya hai", "complaint number"
     ],
-    answer: "Chassis number bataiye, main pehle wali complaint check karti hun."
+    answer: "Chassis number bataiye, pehle wali complaint check karti hun."
   },
 
-  /* ═══════════════════════════════════════════════════════════════
-     LOCATION HELP
-  ═══════════════════════════════════════════════════════════════ */
-  location_help: {
+  /* ─────────────────────────────────────────────────────────────
+     REFUND (TC-16)
+  ───────────────────────────────────────────────────────────── */
+  refund: {
     questions: [
-      "city kaise bataye", "location kaise confirm", "nearest city",
-      "kahan hun main", "kaun sa shehar"
+      "refund chahiye", "paisa wapas", "refund karo", "paise do wapas",
+      "money back", "return karo"
     ],
-    answer: "Rajasthan ki woh city bataiye jahan aapki machine abhi khadi hai."
+    answer: "Refund ke liye engineer visit ke baad process hoga."
   },
 
-  /* ═══════════════════════════════════════════════════════════════
-     ANGRY / FRUSTRATED CUSTOMER
-     (Audio analysis: loud spikes, rapid short bursts = frustration pattern)
-  ═══════════════════════════════════════════════════════════════ */
+  /* ─────────────────────────────────────────────────────────────
+     ANGRY / FRUSTRATED TRIGGERS & RESPONSES
+     Audio analysis: short rapid bursts with higher amplitude = frustration
+  ───────────────────────────────────────────────────────────── */
   angry_acknowledgment: {
     triggers: [
       "bahut der", "kab se wait", "kal se", "2 din", "3 din", "engineer nahi aaya",
       "aaya nahi", "koi nahi aaya", "response nahi", "ignore", "dhyaan nahi",
-      "kab aayega", "turant", "abhi chahiye", "bahut bura", "bekar", "kharab service",
-      "angry", "gussa", "pareshaan", "problem ho rahi", "bahut problem"
+      "bahut bura", "bekar", "kharab service", "bakwaas", "kuch nahi hota",
+      "baar baar call", "koi nahi uthata", "nahi uthata", "5 baar call",
+      "gussa", "pareshaan", "bahut problem", "frustrated", "kharaab",
+      "baat nahi karta", "koi sun nahi raha", "koi dhyan nahi"
     ],
     responses: [
-      "Samajh rahi hun, pareshani ho rahi hai. Abhi solve karwati hun.",
-      "Maafi chahti hun delay ke liye. Engineer ko abhi message bhejti hun.",
-      "Samajh rahi hun. Complaint escalate karti hun — priority mein aayega.",
-      "Sorry aapko wait karna pada. Abhi dekhti hun aur jaldi karte hain."
+      "Samajh rahi hun, pareshani hui. Abhi solve karti hun.",
+      "Maafi chahti hun delay ke liye. Priority pe leti hun abhi.",
+      "Samajh rahi hun. Complaint escalate karti hun.",
+      "Sorry aapko wait karna pada. Abhi jaldi karte hain."
     ]
   },
 
-  /* ═══════════════════════════════════════════════════════════════
-     HOLD / WAIT
-     (Audio: customers say "ek minute", "ruko" frequently between turns)
-  ═══════════════════════════════════════════════════════════════ */
-  hold_responses: ["Zarur.", "Ruko.", "Haan.", "Theek hai.", "Ek second."],
+  /* ─────────────────────────────────────────────────────────────
+     HOLD / WAIT RESPONSES
+     Audio: customers frequently say "ek minute", "ruko" mid-turn
+  ───────────────────────────────────────────────────────────── */
+  hold_responses: ["Zarur.", "Haan.", "Ruko.", "Theek hai."],
 
-  /* ═══════════════════════════════════════════════════════════════
-     SILENCE RESPONSES
-     (Audio analysis: silence between turns is 0.3-1.5s — these are brief)
-  ═══════════════════════════════════════════════════════════════ */
+  /* ─────────────────────────────────────────────────────────────
+     SILENCE RESPONSES (brief — median real gap is 0.34s)
+  ───────────────────────────────────────────────────────────── */
   silence_responses: [
     "Bataiye.",
     "Sun rahi hun.",
@@ -159,63 +214,69 @@ export const KNOWLEDGE_BASE = {
     "Bataiye, main yahan hun."
   ],
 
-  /* ═══════════════════════════════════════════════════════════════
-     CONFUSION / UNCLEAR
-  ═══════════════════════════════════════════════════════════════ */
+  /* ─────────────────────────────────────────────────────────────
+     CONFUSION
+  ───────────────────────────────────────────────────────────── */
   confusion_responses: [
     "Thoda clear bataiye.",
     "Dobara bataiye.",
     "Samajh nahi aaya — kya problem hai machine mein?",
-    "Kya matlab? Thoda explain karein.",
     "Sahi se nahi suna. Kya problem hai?"
   ],
 
-  /* ═══════════════════════════════════════════════════════════════
-     MACHINE NOT FOUND
-  ═══════════════════════════════════════════════════════════════ */
+  /* ─────────────────────────────────────────────────────────────
+     MACHINE NOT FOUND (Matches WantsFlow TC-06, TC-07 patterns)
+  ───────────────────────────────────────────────────────────── */
   machine_not_found_responses: [
-    "Yeh number system mein nahi mila. Ek ek number dhere dhere boliye.",
-    "Chassis number nahi mila. Machine ki plate dekh ke bataiye.",
-    "Number galat ho sakta hai. Dobara dhere se boliye."
+    "Ye number nahi mila ji. Ek baar phir bataiye.",
+    "Ye bhi nahi mila ji. Ek baar aur check karein.",
+    "Chassis nahi mila ji. Engineer ko bhej raha hun, wo directly aayega. Dhanyavaad!"
   ],
 
-  /* ═══════════════════════════════════════════════════════════════
-     FINAL CONFIRMATION PROMPTS
-  ═══════════════════════════════════════════════════════════════ */
+  /* ─────────────────────────────────────────────────────────────
+     FINAL CONFIRMATION PROMPTS (varied — TC examples show natural phrasing)
+     Matches WantsFlow patterns: "Aur koi problem hai? Ya save kar dun?"
+  ───────────────────────────────────────────────────────────── */
   final_confirm_prompts: [
     "Aur koi problem hai? Ya save kar dun?",
     "Kuch aur bataana hai? Warna complaint register karte hain.",
-    "Aur kuch baaki hai? Ya kar dun register?"
+    "Aur kuch baaki hai? Ya kar dun register?",
+    "Aur koi problem to nahi hai? Save kar dun?"
   ],
 
-  /* ═══════════════════════════════════════════════════════════════
-     SUCCESS MESSAGES
-  ═══════════════════════════════════════════════════════════════ */
-  success_base: "Complaint register ho gayi. Engineer contact karega. Shukriya!",
-  success_with_id: "Complaint register ho gayi. Number hai {id}. Engineer contact karega. Shukriya!",
+  /* ─────────────────────────────────────────────────────────────
+     SUCCESS (Matches WantsFlow patterns)
+  ───────────────────────────────────────────────────────────── */
+  success_base: "Complaint register ho gayi ji. Engineer jaldi aayega. Dhanyavaad!",
+  success_with_id: "Complaint register ho gayi ji. Number hai {id}. Engineer jaldi aayega. Dhanyavaad!",
 
-  /* ═══════════════════════════════════════════════════════════════
-     POSITIVE / NEGATIVE CONFIRM TRIGGERS
-  ═══════════════════════════════════════════════════════════════ */
+  /* ─────────────────────────────────────────────────────────────
+     CONFIRMATION TRIGGER LISTS
+  ───────────────────────────────────────────────────────────── */
   positive_triggers: [
     "haan", "ha", "han", "theek hai", "thik hai", "save", "kar do",
     "register", "done", "yes", "bilkul", "sahi hai", "ok", "okay",
     "theek", "chalo", "hmm", "bas itna", "bas itni", "ho gaya", "sahi",
-    "kar dena", "bhar do", "likh do", "note kar"
+    "kar dena", "bhar do", "likh do", "note kar", "haa", "acha", "achha",
+    "correct", "sach mein", "bilkul sahi"
   ],
+
+  // ONLY these = hard cancel (not "nahi" alone — that means "no more problems")
   negative_cancel_triggers: [
     "band karo", "mat karo", "cancel", "ruk ja", "nahin chahiye",
-    "don't", "dont", "chhod do", "nahi karna"
+    "chhod do", "nahi karna", "band kar", "rokk do", "rehne do"
   ],
+
+  // "nahi" alone at final confirm = no more problems = SUBMIT (per TC analysis)
   no_more_problems_triggers: [
     "nahi", "nai", "nahin", "no", "bas", "bas itna", "bas itni",
     "kuch nahi", "aur nahi", "nahi hai", "itna hi", "yahi hai",
-    "theek hai bas", "ho gaya", "nahi kuch aur"
+    "theek hai bas", "ho gaya", "nahi kuch aur", "koi nahi", "aur nahi hai"
   ],
 
-  /* ═══════════════════════════════════════════════════════════════
-     COMPLAINT TYPES (for display / matching)
-  ═══════════════════════════════════════════════════════════════ */
+  /* ─────────────────────────────────────────────────────────────
+     COMPLAINT TYPES
+  ───────────────────────────────────────────────────────────── */
   complaint_types: [
     "Engine Not Starting", "Service/Filter Change", "Engine Smoke",
     "Engine Overheating", "Oil Leakage", "Hydraulic System Failure",
@@ -228,12 +289,12 @@ export const KNOWLEDGE_BASE = {
 };
 
 /* ═══════════════════════════════════════════════════════════════
-   EXPORTED HELPER FUNCTIONS
+   EXPORTED HELPERS
 ═══════════════════════════════════════════════════════════════ */
 
 /**
- * Answer a side question if detected.
- * Returns a SHORT natural response or null.
+ * Answer a side question in 1 sentence. Returns null if not matched.
+ * Used to answer + then redirect to next field.
  */
 export function getSideAnswer(text) {
   if (!text) return null;
@@ -250,9 +311,9 @@ export function getSideAnswer(text) {
 }
 
 /**
- * Detect if customer is angry/frustrated.
- * Based on audio analysis: short rapid bursts with high amplitude = frustration.
- * Returns a natural empathetic response or null.
+ * Detect angry/frustrated customer.
+ * Returns empathy response or null.
+ * Based on audio: short rapid bursts with higher amplitude.
  */
 export function getAngryResponse(text) {
   if (!text) return null;
@@ -266,26 +327,15 @@ export function getAngryResponse(text) {
 }
 
 /**
- * Get intent-based response for WAIT / CONFUSED / REPEAT.
+ * Detect hold/wait intent ("ek minute", "ruko", etc.)
  */
-export function getIntentResponse(intent, lastSpoken = "") {
-  switch (intent) {
-    case "WAIT":
-      return pickRandom(KNOWLEDGE_BASE.hold_responses);
-    case "CONFUSED":
-      return pickRandom(KNOWLEDGE_BASE.confusion_responses);
-    case "REPEAT":
-      return lastSpoken
-        ? `${pickRandom(KNOWLEDGE_BASE.silence_responses)} ${lastSpoken}`
-        : "Dobara bataiye.";
-    default:
-      return null;
-  }
+export function isHoldIntent(text) {
+  if (!text) return false;
+  return /^(ek minute|ek second|ruko|ruk|dhundh|dekh raha|hold on|thoda ruko|leke aata|bas|thoda wait)\s*$/i.test(text.trim());
 }
 
 /**
  * Get silence response based on consecutive silence count.
- * Audio analysis: silence between turns is 0.3-1.5s — responses must be brief.
  */
 export function getSilenceResponse(silenceCount = 1) {
   const r = KNOWLEDGE_BASE.silence_responses;
@@ -293,14 +343,14 @@ export function getSilenceResponse(silenceCount = 1) {
 }
 
 /**
- * Get a machine-not-found message.
+ * Get machine-not-found message.
  */
 export function getMachineNotFoundResponse() {
   return pickRandom(KNOWLEDGE_BASE.machine_not_found_responses);
 }
 
 /**
- * Get final confirm prompt — varies to avoid robotic repetition.
+ * Get final confirm prompt — varied to avoid repetition.
  */
 export function getFinalConfirmPrompt() {
   return pickRandom(KNOWLEDGE_BASE.final_confirm_prompts);
@@ -317,70 +367,64 @@ export function getSuccessMessage(id = null) {
 }
 
 /**
- * Check if text is a positive confirmation.
- * Based on audio: many very short turns (< 1.5s) = quick acks like "haan", "ok".
+ * Is this a positive confirmation?
+ * Audio data: 74% of bursts <0.5s = short acks like "haan", "ok"
  */
 export function isPositiveConfirmation(text) {
-  const lo = text.toLowerCase();
+  if (!text) return false;
+  const lo = text.toLowerCase().trim();
   return KNOWLEDGE_BASE.positive_triggers.some(t => lo.includes(t));
 }
 
 /**
- * Check if text is a hard cancel (not just "nahi" = no more problems).
+ * Is this a HARD cancel (not just "nahi" = no more problems)?
+ * Only matches explicit cancel phrases.
  */
 export function isHardCancel(text) {
+  if (!text) return false;
   const lo = text.toLowerCase();
   return KNOWLEDGE_BASE.negative_cancel_triggers.some(t => lo.includes(t));
 }
 
 /**
- * Check if "nahi" means "no more problems" (submit) vs. true cancel.
- * Audio insight: customers say "nahi" to mean "that's all" at final confirm.
+ * "nahi" at final confirm = no more problems = SUBMIT.
+ * This is the correct interpretation per TC-01 through TC-50.
  */
 export function isNoMoreProblems(text) {
-  const lo = text.toLowerCase();
-  return KNOWLEDGE_BASE.no_more_problems_triggers.some(t => lo.includes(t));
+  if (!text) return false;
+  const lo = text.toLowerCase().trim();
+  return KNOWLEDGE_BASE.no_more_problems_triggers.some(t => lo === t || lo.startsWith(t + " ") || lo.endsWith(" " + t));
 }
 
 /**
  * Check if customer wants to add more problems.
  */
 export function isAddMoreProblem(text) {
+  if (!text) return false;
   const lo = text.toLowerCase();
   const hasAddWord = /(aur (problem|complaint|issue|bhi|koi aur)|additional|extra|dusri|phir se|another|aur kuch)/.test(lo);
   return hasAddWord && !isHardCancel(text);
 }
 
 /**
- * Analyze full customer input and return type + message.
+ * Is this a short acknowledgment that should bypass LLM?
+ * Audio data: 74% of turns are <0.5s = "haan", "ok", "theek", etc.
+ * These should be fast-pathed — no Groq call needed.
  */
-export function analyzeCustomerResponse(text, options = {}) {
-  const { silenceCount = 0 } = options;
-  const lo = (text || "").toLowerCase().trim();
-
-  if (!text || text.length < 2) {
-    return { type: "SILENCE", message: getSilenceResponse(silenceCount + 1) };
-  }
-
-  if (getAngryResponse(text)) {
-    return { type: "ANGRY", message: getAngryResponse(text) };
-  }
-
-  if (/(ek minute|ek second|ruko|ruk|dhundh|dekh raha|hold on|thoda ruko|leke aata)/i.test(lo)) {
-    return { type: "HOLD", message: pickRandom(KNOWLEDGE_BASE.hold_responses) };
-  }
-
-  const side = getSideAnswer(text);
-  if (side) {
-    return { type: "SIDE_QUESTION", message: side };
-  }
-
-  return { type: "NORMAL", message: null };
+export function isShortAck(text) {
+  if (!text) return false;
+  const lo = text.toLowerCase().trim();
+  return /^(haan|ha|han|ok|okay|theek|hmm|acha|achha|hm|ji|yes|nahi|nai|no|haa|sahi|correct|bilkul|acha|thik)$/i.test(lo);
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   INTERNAL UTILS
-═══════════════════════════════════════════════════════════════ */
+/**
+ * Get hold response.
+ */
+export function getHoldResponse() {
+  return pickRandom(KNOWLEDGE_BASE.hold_responses);
+}
+
+/* Internal */
 function pickRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -389,7 +433,7 @@ export default {
   KNOWLEDGE_BASE,
   getSideAnswer,
   getAngryResponse,
-  getIntentResponse,
+  isHoldIntent,
   getSilenceResponse,
   getMachineNotFoundResponse,
   getFinalConfirmPrompt,
@@ -398,5 +442,6 @@ export default {
   isHardCancel,
   isNoMoreProblems,
   isAddMoreProblem,
-  analyzeCustomerResponse,
+  isShortAck,
+  getHoldResponse,
 };
