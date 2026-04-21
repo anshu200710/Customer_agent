@@ -120,7 +120,7 @@ function answerSideQuestion(text) {
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    🔊 TTS
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-const TTS_VOICE = "Google.hi-IN-Wavenet-A";
+const TTS_VOICE = "Google.hi-IN-Standard-A";
 const TTS_LANG = "hi-IN";
 
 function speak(twiml, text) {
@@ -135,6 +135,8 @@ function speak(twiml, text) {
         method: "POST",
         enhanced: true,
         speechModel: "phone_call",
+        hints: "0,1,2,3,4,5,6,7,8,9,ek,do,teen,char,paanch,chhe,saat,aath,nau,shunya,machine,number,chassis,complaint,problem,band,khadi,chal,rahi,tel,nikal,garam,dhak,filter,service,Bhilwara,Jaipur,Kota,Ajmer,Udaipur,Alwar,Sikar,Bikaner,Jodhpur,Tonk,Dausa,Bharatpur,Dholpur,Karauli,Nagaur,Pali,Barmer,Chittorgarh,Bundi,Jhalawar,Rajsamand,Dungarpur,Banswara,Pratapgarh,Sirohi,Jalor,Churu,Hanumangarh,Ganganagar,haan,nahi,theek,bilkul,save,register,engineer,jaldi,aayega",
+        profanityFilter: false,
         bargeIn: false,
     });
     gather.say({ voice: TTS_VOICE, language: TTS_LANG }, text);
@@ -194,13 +196,14 @@ router.post("/", async (req, res) => {
         };
 
         // Phone-based pre-lookup (silent)
-        if (callerPhone) {
-            const pr = await findMachineByPhone(callerPhone);
-            if (pr.valid) {
-                callData._phoneData = pr.data;
-                console.log(`   📱 Phone lookup: ${pr.data.name}`);
-            }
-        }
+        // COMMENTED OUT: This was causing 1-2 second delay on call pickup
+        // if (callerPhone) {
+        //     const pr = await findMachineByPhone(callerPhone);
+        //     if (pr.valid) {
+        //         callData._phoneData = pr.data;
+        //         console.log(`   📱 Phone lookup: ${pr.data.name}`);
+        //     }
+        // }
 
         // Preloaded machine number validation
         if (preloadedMachineNo) {
@@ -218,7 +221,7 @@ router.post("/", async (req, res) => {
         activeCalls.set(CallSid, callData);
 
         const greeting = callData.customerData
-            ? `Namaste ${callData.customerData.name.split(" ")[0]} ji, kya problem hai?`
+            ? `Namaste ${callData.customerData.name.split(" ")[0]}, kya problem hai?`
             : "Namaste, Rajesh Motors. Machine number bataiye.";
 
         callData.lastQuestion = greeting;  // Track the question
@@ -437,7 +440,7 @@ router.post("/process", async (req, res) => {
             const lastTwo = ph.slice(-2);
             callData.pendingPhoneConfirm = false;
             callData.awaitingPhoneConfirm = true;
-            const prompt = `${callData.customerData.name.split(" ")[0]} ji, kya aapka yehi number save karna hai jisme last mein ${lastTwo} aata hai, ya change karna hai?`;
+            const prompt = `${callData.customerData.name.split(" ")[0]}, kya aapka yehi number save karna hai jisme last mein ${lastTwo} aata hai, ya change karna hai?`;
             callData.lastQuestion = prompt;
             console.log(`   📞 Phone confirmation prompt - asking about number ending in ${lastTwo}`);
             activeCalls.set(CallSid, callData);
@@ -459,7 +462,7 @@ router.post("/process", async (req, res) => {
                     console.log(`   ✅ Phone confirmed: ${callData.customerData.phone}`);
                 } else {
                     callData.awaitingAlternatePhone = true;
-                    const prompt = "Theek hai ji, apna dusra number bataiye.";
+                    const prompt = "Theek hai, apna dusra number bataiye.";
                     callData.lastQuestion = prompt;
                     console.log(`   🔄 User wants to change phone - asking for alternate`);
                     activeCalls.set(CallSid, callData);
@@ -488,7 +491,7 @@ router.post("/process", async (req, res) => {
             } else {
                 console.log(`   🔄 No phone found in alternate input - asking again`);
                 callData.awaitingAlternatePhone = true;
-                const prompt = "Ji, thoda clearly 10 digit ka mobile number bataiye.";
+                const prompt = "Thoda clearly 10 digit ka mobile number bataiye.";
                 callData.lastQuestion = prompt;
                 activeCalls.set(CallSid, callData);
                 speak(twiml, prompt);
@@ -530,7 +533,7 @@ router.post("/process", async (req, res) => {
                 callData.extractedData.city = null;
                 callData.extractedData.city_id = null;
                 callData.extractedData.branch = null;
-                const prompt = "Achha ji, apni nearest city ka naam dobara bataiye.";
+                const prompt = "Achha, apni nearest city ka naam dobara bataiye.";
                 callData.lastQuestion = prompt;
                 console.log(`   🔄 City rejected - asking again`);
                 activeCalls.set(CallSid, callData);
@@ -558,14 +561,14 @@ router.post("/process", async (req, res) => {
 
                 if (existingInfo?.found) {
                     callData.existingComplaintId = existingInfo.complaintId;
-                    const prompt = `Ji, complaint ${existingInfo.complaintId} mili. Nayi complaint karein ya engineer ko urgent message bhejein?`;
+                    const prompt = `Complaint ${existingInfo.complaintId} mili. Nayi complaint karein ya engineer ko urgent message bhejein?`;
                     callData.lastQuestion = prompt;
                     console.log(`   📋 Existing complaint found: ${existingInfo.complaintId} - asking for action`);
                     activeCalls.set(CallSid, callData);
                     speak(twiml, prompt);
                 } else {
                     callData.awaitingComplaintAction = false;
-                    const prompt = "Ji. Pehli complaint nahi mili. Nayi register karta hun. Chassis number bataiye.";
+                    const prompt = "Pehli complaint nahi mili. Nayi register karta hun. Chassis number bataiye.";
                     callData.lastQuestion = prompt;
                     console.log(`   ℹ️  No existing complaint found - proceeding with new registration`);
                     activeCalls.set(CallSid, callData);
@@ -582,7 +585,7 @@ router.post("/process", async (req, res) => {
             if (wantsUrgent) {
                 await escalateToEngineer(callData.existingComplaintId, callData.callingNumber);
                 console.log(`   🚨 Escalated existing complaint: ${callData.existingComplaintId}`);
-                sayFinal(twiml, "Ji bilkul. Engineer ko urgent message bhej diya. Jaldi aayega. Dhanyavaad ji!");
+                sayFinal(twiml, "Bilkul. Engineer ko urgent message bhej diya. Jaldi aayega. Dhanyavaad!");
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
@@ -607,7 +610,7 @@ router.post("/process", async (req, res) => {
             }
 
             callData.awaitingFinalConfirm = true;
-            const prompt = "Ji. Aur koi problem toh nahi machine mein? Save kar dun complaint?";
+            const prompt = "Aur koi problem toh nahi machine mein? Save kar dun complaint?";
             callData.lastQuestion = prompt;
             console.log(`   ✅ All data collected - asking final confirmation`);
             activeCalls.set(CallSid, callData);
@@ -624,7 +627,7 @@ router.post("/process", async (req, res) => {
 
             if (isNegative) {
                 console.log(`   ❌ User declined final confirmation - ending call`);
-                sayFinal(twiml, "Theek hai ji. Agar kuch aur ho toh dobara call karein. Dhanyavaad!");
+                sayFinal(twiml, "Theek hai. Agar kuch aur ho toh dobara call karein. Dhanyavaad!");
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
@@ -680,7 +683,7 @@ router.post("/process", async (req, res) => {
         if (!missing && machineValidated) {
             // Safety net — shouldn't reach here normally (caught in step 9)
             callData.awaitingFinalConfirm = true;
-            const fallbackPrompt = "Ji. Aur koi problem toh nahi? Save kar dun?";
+            const fallbackPrompt = "Aur koi problem toh nahi? Save kar dun?";
             callData.lastQuestion = fallbackPrompt;
             console.log(`   ⚠️  Reached AI section with complete data - using hardcoded fallback`);
             activeCalls.set(CallSid, callData);
@@ -739,7 +742,7 @@ router.post("/process", async (req, res) => {
         // Check again after AI — but route through final confirm if now complete
         const stillMissing = missingField(callData.extractedData);
         if (!stillMissing && machineValidated) {
-            const finalQuestion = "Ji. Aur koi problem toh nahi machine mein? Save kar dun complaint?";
+            const finalQuestion = "Aur koi problem toh nahi machine mein? Save kar dun complaint?";
             callData.awaitingFinalConfirm = true;
             callData.lastQuestion = finalQuestion;
             callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
@@ -751,7 +754,7 @@ router.post("/process", async (req, res) => {
         // HARD GUARD: never submit unless machine validated
         if (aiResp.readyToSubmit && !machineValidated) {
             console.warn(`   ⛔ AI said ready but machine NOT validated — blocking submit`);
-            aiResp.text = "Machine number nahi mila ji. Sahi chassis number bataiye.";
+            aiResp.text = "Machine number nahi mila. Sahi chassis number bataiye.";
             callData.lastQuestion = aiResp.text;
             aiResp.readyToSubmit = false;
         }
@@ -764,9 +767,9 @@ router.post("/process", async (req, res) => {
             
             if (id) {
                 const idFormatted = formatNumberForTTS(id);
-                sayFinal(twiml, `Humne aapki complaint register kar di hai ji. Number hai ${idFormatted}. Engineer jaldi contact karega. Dhanyavaad!`);
+                sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${idFormatted}. Engineer jaldi contact karega. Dhanyavaad!`);
             } else {
-                sayFinal(twiml, "Humne aapki complaint register kar di hai ji. Engineer jaldi contact karega. Dhanyavaad!");
+                sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!");
             }
             twiml.hangup();
             activeCalls.delete(CallSid);
@@ -796,9 +799,9 @@ async function handleSubmit(callData, twiml, res, CallSid) {
     const id = result.sapId || result.jobId || "";
 
     if (id) {
-        sayFinal(twiml, `Humne aapki complaint register kar di hai ji. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
+        sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
     } else {
-        sayFinal(twiml, "Humne aapki complaint register kar di hai ji. Engineer jaldi contact karega. Dhanyavaad!");
+        sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!");
     }
 
     twiml.hangup();
