@@ -5,6 +5,7 @@ import { getSmartAIResponse, extractAllData, sanitizeExtractedData, matchService
 import { searchFAQ, getAgentInfo, getUnavailableMessage } from "../utils/faq.js";
 import { generateSpeech, detectEmotionAndContext, formatNumbersForTTS } from "../utils/cartesia_tts.js";
 import serviceLogger from "../utils/service_logger.js";
+import performanceLogger from "../utils/performance_logger.js";
 
 const router = express.Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -157,7 +158,7 @@ const TTS_LANG = "hi-IN";
  * @param {Object} options - TTS options
  */
 async function speak(twiml, text, options = {}) {
-    const startTime = Date.now();
+    const ttsStartTime = performanceLogger.getHighResTime();
     let ttsService = 'Google TTS';
     let voice = TTS_VOICE;
     let success = false;
@@ -180,6 +181,8 @@ async function speak(twiml, text, options = {}) {
             callSid: options.callSid
         });
         
+        const ttsEndTime = performanceLogger.getHighResTime();
+        
         if (cartesiaResult && cartesiaResult.success) {
             // Success with Cartesia - use high-quality neural voice
             ttsService = 'Cartesia';
@@ -188,6 +191,16 @@ async function speak(twiml, text, options = {}) {
             console.log(`✅ [TTS] Using Cartesia Sonic 3 (${cartesiaResult.wavAudio.length} bytes)`);
             console.log(`🎵 [TTS] Audio ID: ${cartesiaResult.audioId}`);
             console.log(`⏱️  [TTS] Duration: ${cartesiaResult.duration.toFixed(2)}s`);
+            
+            // Log TTS performance timing
+            performanceLogger.logTTS(
+                options.callSid,
+                ttsStartTime,
+                ttsEndTime,
+                cartesiaResult.wavAudio.length,
+                cartesiaResult.metadata.cost,
+                'Cartesia'
+            );
             
             // Use Cartesia audio streaming instead of Google TTS
             const audioStreamUrl = `${process.env.PUBLIC_URL}/stream-audio/${cartesiaResult.audioId}`;
@@ -208,7 +221,7 @@ async function speak(twiml, text, options = {}) {
             gather.play(audioStreamUrl);
             
             // Fallback message if user doesn't respond
-            twiml.redirect(options.redirect || "/voice/handle-silence");
+            twiml.redirect(options.redirect || "/voice/process");
             
             return twiml.toString();
         }
@@ -217,6 +230,16 @@ async function speak(twiml, text, options = {}) {
         console.log(`⚠️  [TTS] Cartesia failed, falling back to Google TTS`);
         console.log(`   Error: ${cartesiaResult?.error || 'Unknown error'}`);
         
+        // Log failed Cartesia TTS timing
+        performanceLogger.logTTS(
+            options.callSid,
+            ttsStartTime,
+            ttsEndTime,
+            0,
+            0,
+            'Cartesia',
+            cartesiaResult?.error || 'Unknown error'
+        );
         // Create Twilio gather with speech recognition
         const gather = twiml.gather({
             input: "speech dtmf",
@@ -437,6 +460,9 @@ router.post("/", async (req, res) => {
 
     // Initialize service logging session
     serviceLogger.initSession(CallSid, callerPhone);
+    
+    // Initialize performance logging session
+    performanceLogger.initSession(CallSid, callerPhone);
 
     const twiml = new VoiceResponse();
     try {
@@ -556,14 +582,27 @@ router.post("/process", async (req, res) => {
             return res.type("text/xml").send(twiml.toString());
         }
 
+        // Start turn timing
+        const turnStartTime = performanceLogger.getHighResTime();
+        const turnNumber = callData.turnCount + 1;
+        performanceLogger.startTurn(CallSid, turnNumber, { 
+            inputMethod: Digits ? "DTMF" : (SpeechResult ? "SPEECH" : "SILENCE"),
+            hasDigits: !!Digits,
+            hasSpeech: !!SpeechResult
+        });
+
         // Prioritize DTMF (keypad) over speech - DTMF is 100% accurate
         const userInput = Digits || SpeechResult?.trim() || "";
         const inputMethod = Digits ? "DTMF" : (SpeechResult ? "SPEECH" : "SILENCE");
         callData.turnCount++;
         const lo = userInput.toLowerCase();
 
-        // Log STT usage (Twilio's speech recognition)
+        // Log STT timing and usage
+        const sttStartTime = turnStartTime; // STT processing happened before this handler
+        const sttEndTime = performanceLogger.getHighResTime();
+        
         if (SpeechResult) {
+            // Log STT usage (Twilio's speech recognition)
             serviceLogger.logSTT(
                 CallSid,
                 'Twilio',
@@ -575,6 +614,15 @@ router.post("/process", async (req, res) => {
                     latency: 0, // Not available
                     cost: 0 // Included in Twilio call cost
                 }
+            );
+            
+            // Log STT performance timing
+            performanceLogger.logSTT(
+                CallSid,
+                sttStartTime,
+                sttEndTime,
+                SpeechResult,
+                0.8 // Estimated confidence
             );
         }
 
@@ -595,6 +643,7 @@ router.post("/process", async (req, res) => {
             serviceLogger.endSession(CallSid, 'turn_limit');
             await sayFinal(twiml, "Engineer ko message kar diya ji. Dhanyavaad!", { context: 'farewell', emotion: 'professional', callSid: CallSid });
             twiml.hangup();
+            performanceLogger.endSession(CallSid, 'completed');
             activeCalls.delete(CallSid);
             return res.type("text/xml").send(twiml.toString());
         }
@@ -605,11 +654,16 @@ router.post("/process", async (req, res) => {
             const hasData = !!(callData.customerData || callData.extractedData.machine_no);
             const maxSilence = hasData ? 5 : 3;
             
+            // Log silence timing (estimate 5 seconds per silence timeout)
+            const silenceDuration = 5000; // 5 seconds timeout
+            performanceLogger.logSilence(CallSid, silenceDuration, 'timeout');
+            
             console.log(`   🔇 Silence count: ${callData.silenceCount}/${maxSilence}`);
             
             if (callData.silenceCount >= maxSilence) {
                 console.log(`   ⚠️  Max silence reached - ending call`);
                 serviceLogger.endSession(CallSid, 'silence_timeout');
+                performanceLogger.endSession(CallSid, 'silence_timeout');
                 await sayFinal(twiml, "Awaaz nahi aa rahi. Dobara call kijiye.", { emotion: 'professional', callSid: CallSid });
                 twiml.hangup();
                 activeCalls.delete(CallSid);
@@ -727,6 +781,7 @@ router.post("/process", async (req, res) => {
                     console.log(`   ⛔ Max attempts reached (3) - escalating to engineer`);
                     await sayFinal(twiml, "Machine number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!", { context: 'farewell', emotion: 'empathetic' });
                     twiml.hangup();
+                    performanceLogger.endSession(CallSid, 'machine_not_found');
                     activeCalls.delete(CallSid);
                     return res.type("text/xml").send(twiml.toString());
                 }
@@ -900,6 +955,7 @@ router.post("/process", async (req, res) => {
                 console.log(`   🚨 Escalated existing complaint: ${callData.existingComplaintId}`);
                 await sayFinal(twiml, "Bilkul. Engineer ko urgent message bhej diya. Jaldi aayega. Dhanyavaad!", { context: 'farewell', emotion: 'professional' });
                 twiml.hangup();
+                performanceLogger.endSession(CallSid, 'completed');
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
             }
@@ -942,6 +998,7 @@ router.post("/process", async (req, res) => {
                 console.log(`   ❌ User declined final confirmation - ending call`);
                 await sayFinal(twiml, "Theek hai. Agar kuch aur ho toh dobara call karein. Dhanyavaad!", { context: 'farewell', emotion: 'professional' });
                 twiml.hangup();
+                performanceLogger.endSession(CallSid, 'user_declined');
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
             }
@@ -1006,7 +1063,21 @@ router.post("/process", async (req, res) => {
 
         // LLM-FIRST: Let AI handle the conversation with full context
         console.log(`   🤖 Calling AI with enhanced context (turn ${callData.turnCount}, attempts ${callData.machineNumberAttempts || 0})...`);
+        
+        // Start LLM timing
+        const llmStartTime = performanceLogger.getHighResTime();
         const aiResp = await getSmartAIResponse(callData);
+        const llmEndTime = performanceLogger.getHighResTime();
+        
+        // Log LLM performance timing
+        performanceLogger.logLLM(
+            CallSid,
+            llmStartTime,
+            llmEndTime,
+            aiResp.tokens || 0,
+            aiResp.cost || 0,
+            aiResp.error || null
+        );
         
         // Store AI response for debugging and fallback
         callData.lastAIResponse = aiResp.text;
@@ -1104,12 +1175,20 @@ router.post("/process", async (req, res) => {
             await speak(twiml, aiResp.text, { emotion: 'professional', callSid: CallSid });
         }
         
+        // Complete turn timing
+        performanceLogger.completeTurn(CallSid);
+        
         res.type("text/xml").send(twiml.toString());
 
     } catch (err) {
         console.error("❌ [PROCESS]", err.message);
+        
+        // Complete turn timing even on error
+        performanceLogger.completeTurn(CallSid);
+        
         await sayFinal(twiml, "Thodi dikkat aa gayi ji. Engineer ko bhej raha hun.", { emotion: 'empathetic' });
         twiml.dial(process.env.HUMAN_AGENT_NUMBER || "+919876543210");
+        performanceLogger.endSession(CallSid, 'error');
         activeCalls.delete(CallSid);
         res.type("text/xml").send(twiml.toString());
     }
@@ -1312,11 +1391,23 @@ async function submitComplaint(callData) {
 
         console.log("📤 Submitting:", JSON.stringify(payload, null, 2));
 
+        // Start API timing
+        const apiStartTime = performanceLogger.getHighResTime();
         const r = await axios.post(COMPLAINT_URL, payload, {
             timeout: API_TIMEOUT,
             headers: { "Content-Type": "application/json", ...API_HEADERS },
             validateStatus: s => s < 500,
         });
+        const apiEndTime = performanceLogger.getHighResTime();
+        
+        // Log API performance timing
+        performanceLogger.logAPI(
+            callSid,
+            apiStartTime,
+            apiEndTime,
+            'complaint_submission',
+            r.status !== 200 ? `HTTP ${r.status}` : null
+        );
 
         if (r.status === 200 && r.data?.status === 1) {
             const sapId = r.data.data?.complaint_sap_id || r.data.data?.sap_id;
@@ -1329,6 +1420,17 @@ async function submitComplaint(callData) {
 
     } catch (err) {
         console.error("❌ Submit failed:", err.message);
+        
+        // Log API error timing
+        const apiEndTime = performanceLogger.getHighResTime();
+        performanceLogger.logAPI(
+            callSid,
+            apiStartTime || performanceLogger.getHighResTime(),
+            apiEndTime,
+            'complaint_submission',
+            err.message
+        );
+        
         return { success: false };
     }
 }

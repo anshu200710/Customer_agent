@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import bodyParser from 'body-parser';
 import audioCache from './utils/audio_cache.js';
+import performanceLogger from './utils/performance_logger.js';
 
 import outboundRoutes from './routes/outbound.js';
 import voiceAiRoutes from './routes/voice_simple.js';
@@ -102,6 +103,41 @@ app.get('/audio-stats', (req, res) => {
     res.json({
         success: true,
         cache: stats,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Performance statistics endpoint
+app.get('/performance-stats', (req, res) => {
+    const stats = performanceLogger.getGlobalStats();
+    console.log(`📈 [PERFORMANCE STATS] Request from ${req.ip}`);
+    performanceLogger.printGlobalStats();
+    
+    res.json({
+        success: true,
+        performance: stats,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Detailed session data endpoint
+app.get('/session-data/:callSid', (req, res) => {
+    const { callSid } = req.params;
+    const sessionData = performanceLogger.exportSessionData(callSid);
+    
+    if (!sessionData) {
+        return res.status(404).json({
+            success: false,
+            error: 'Session not found',
+            callSid
+        });
+    }
+    
+    console.log(`📋 [SESSION DATA] Request for ${callSid} from ${req.ip}`);
+    
+    res.json({
+        success: true,
+        session: sessionData,
         timestamp: new Date().toISOString()
     });
 });
