@@ -91,6 +91,8 @@ export const SERVICE_CENTERS = [
    SYSTEM PROMPT BUILDER
    Key rule: single focused NEXT ACTION, never re-ask collected fields
    Key rule: if customer asks question → ANSWER FIRST, then next field
+   FIX #2: Add critical state awareness to prevent AI from extracting
+           conflicting data during confirmation states
 ═══════════════════════════════════════════════════════════════ */
 function buildSystemPrompt(callData) {
   const d = callData.extractedData;
@@ -118,6 +120,28 @@ function buildSystemPrompt(callData) {
   }
 
   const lastUserMsg = callData.messages.filter(m => m.role === "user").pop()?.text || "";
+
+  // FIX #2: Build critical state warnings for AI
+  const criticalState = [];
+  if (callData.awaitingPhoneConfirm) {
+    criticalState.push("⚠️ WAITING for phone confirmation (expect ONLY 'haan'/'nahi' response)");
+  }
+  if (callData.awaitingChassisMore) {
+    criticalState.push("⚠️ COLLECTING chassis digits in chunks (do NOT extract new machine_no from short digit sequences)");
+  }
+  if (callData.awaitingPhoneMore) {
+    criticalState.push("⚠️ COLLECTING phone digits in chunks (do NOT extract from partial sequences)");
+  }
+  if (callData.awaitingFinalConfirm) {
+    criticalState.push("⚠️ FINAL confirmation state (check if customer is correcting data or adding more problems)");
+  }
+  if (callData.awaitingAlternatePhone) {
+    criticalState.push("⚠️ COLLECTING alternate phone number (expect 10-digit number)");
+  }
+  
+  const stateWarning = criticalState.length > 0
+    ? `\n\n${"═".repeat(60)}\n🚨 CRITICAL STATE ACTIVE:\n${criticalState.map(s => `   ${s}`).join("\n")}\n${"═".repeat(60)}\n`
+    : "";
 
   let nextAction = "";
   if (!d.machine_no) {
@@ -149,7 +173,7 @@ function buildSystemPrompt(callData) {
 
   return `You are Priya — experienced, empathetic customer service executive at Rajesh Motors JCB Service, Rajasthan.
 Speak natural Hinglish (Hindi + simple English). Sound human, conversational — like a real phone call.
-
+${stateWarning}
 CUSTOMER SAID: "${lastUserMsg}"
 CUSTOMER TYPE: ${responseType}
 IDENTIFIED: ${customerLine}

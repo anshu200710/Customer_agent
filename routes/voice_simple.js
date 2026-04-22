@@ -3871,8 +3871,8 @@ router.post("/process", async (req, res) => {
         callData.partialPhoneNo = "";
         callData.step = "ask_complaint";
         callData.retries = 0;
-        const readable = `${callData.callingNumber.slice(0, 5)} ${callData.callingNumber.slice(5)}`;
-        ask(twiml, `Achha. Aapke number ${readable} se complaint save kar denge. Ab batayein — machine mein kya taklif hai?`);
+        const lastTwo = callData.callingNumber.slice(-2);
+        ask(twiml, `Achha. Aapke number jisme last mein ${lastTwo} hai se complaint save kar denge. Ab batayein — machine mein kya taklif hai?`);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
       }
@@ -3894,8 +3894,8 @@ router.post("/process", async (req, res) => {
             callData.partialPhoneNo = "";
             callData.step = "ask_complaint";
             callData.retries = 0;
-            const readable = `${phone.slice(0, 5)} ${phone.slice(5)}`;
-            ask(twiml, `Achha. Number update ho gaya: ${readable}. Ab batayein — machine mein kya taklif hai?`);
+            const lastTwo = phone.slice(-2);
+            ask(twiml, `Achha. Number jisme last mein ${lastTwo} hai — update ho gaya. Ab batayein — machine mein kya taklif hai?`);
             activeCalls.set(CallSid, callData);
             return res.type("text/xml").send(twiml.toString());
           } else {
@@ -3928,8 +3928,8 @@ router.post("/process", async (req, res) => {
           callData.partialPhoneNo = "";
           callData.step = "ask_complaint";
           callData.retries = 0;
-          const readable = `${phone.slice(0, 5)} ${phone.slice(5)}`;
-          ask(twiml, `Theek hai. Number ${readable} se complaint save kar denge. Ab batayein — machine mein kya taklif hai?`);
+          const lastTwo = phone.slice(-2);
+          ask(twiml, `Theek hai. Number jisme last mein ${lastTwo} hai se complaint save kar denge. Ab batayein — machine mein kya taklif hai?`);
           activeCalls.set(CallSid, callData);
           return res.type("text/xml").send(twiml.toString());
         }
@@ -3937,7 +3937,7 @@ router.post("/process", async (req, res) => {
 
       // Detect "save/wahi/sahi/use this" intent — treat as confirming existing number
       const isSaveIntent =
-        /\b(save|sev|wahi|wahin|usi|same|sahi|theek|use|rakh|rakho|yahi|isko)\b/i.test(
+        /\b(save|sev|wahi|wahin|usi|same|sahi|theek|use|rakh|rakho|yahi|isko|yehi rakhna|yehi rakhna hai)\b/i.test(
           rawSpeech,
         ) && !/^\d/.test(rawSpeech.trim()) && !changeIntent.test(rawSpeech);
 
@@ -4020,8 +4020,8 @@ router.post("/process", async (req, res) => {
         callData.partialPhoneNo = "";
         callData.step = "ask_complaint";
         callData.retries = 0;
-        const readable = `${knownPhone.slice(0, 5)} ${knownPhone.slice(5)}`;
-        ask(twiml, `Theek hai bhai. Number ${readable} se complaint save karenge. Ab batayein — machine mein kya problem hai?`);
+        const lastTwo = knownPhone.slice(-2);
+        ask(twiml, `Theek hai bhai. Number jisme last mein ${lastTwo} hai se complaint save karenge. Ab batayein — machine mein kya problem hai?`);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
       }
@@ -4042,8 +4042,8 @@ router.post("/process", async (req, res) => {
           callData.tempPhone = potentialPhone;
           callData.step = "validate_phone";
           callData.retries = 0;
-          const readable = `${potentialPhone.slice(0, 5)} ${potentialPhone.slice(5)}`;
-          callData.lastQuestion = `Aapka ye number sahi hai kya? ${readable} — haan ya nahi?`;
+          const lastTwo = potentialPhone.slice(-2);
+          callData.lastQuestion = `Ji, ye number theek hai jisme last mein ${lastTwo} aata hai?`;
           ask(twiml, callData.lastQuestion);
           activeCalls.set(CallSid, callData);
           return res.type("text/xml").send(twiml.toString());
@@ -4145,8 +4145,8 @@ router.post("/process", async (req, res) => {
         callData.partialPhoneNo = "";
         callData.step = "ask_complaint";
         callData.retries = 0;
-        const readable = `${tempPhone.slice(0, 5)} ${tempPhone.slice(5)}`;
-        callData.lastQuestion = "Achha! Ab batayein — machine mein kya taklif hai?";
+        const lastTwo = tempPhone.slice(-2);
+        callData.lastQuestion = `Theek hai. Number jisme last mein ${lastTwo} hai se complaint save kar denge. Ab batayein — machine mein kya taklif hai?`;
         ask(twiml, callData.lastQuestion);
         activeCalls.set(CallSid, callData);
         return res.type("text/xml").send(twiml.toString());
@@ -4876,9 +4876,9 @@ router.post("/process", async (req, res) => {
 /* ======================= HELPER: Build phone question ======================= */
 function _buildPhoneQuestion(callData) {
   const knownPhone = callData.customerData?.phone;
-  if (knownPhone && knownPhone !== "Unknown") {
-    const readable = knownPhone.split("").join(" ");
-    return `Humhare paas number ${readable} hai. Kya yeh sahi hai?`;
+  if (knownPhone && knownPhone !== "Unknown" && knownPhone.length >= 2) {
+    const lastTwo = knownPhone.slice(-2);
+    return `Ji, ye number theek hai jisme last mein ${lastTwo} aata hai?`;
   }
   return "Kripya apna 10 anko ka mobile number boliye.";
 }

@@ -88,14 +88,21 @@ const API_HEADERS = { JCBSERVICEAPI: "MakeInJcb" };
 
 /* ═══════════════════════════════════════════════════════════════
    REQUIRED FIELDS CHECK
+   FIX: Normalize phone before validation to handle formatting edge cases
 ═══════════════════════════════════════════════════════════════ */
 function missingField(d) {
   if (!d.machine_no || !/^\d{4,7}$/.test(d.machine_no)) return "machine_no";
   if (!d.complaint_title) return "complaint_title";
   if (!d.machine_status) return "machine_status";
   if (!d.city || !d.city_id) return "city";
-  if (!d.customer_phone || !/^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(String(d.customer_phone)))
+  
+  // FIX #5: Normalize phone before validation (handles "9876543210, 8765432109" and "9876543210,8765432109")
+  if (!d.customer_phone) return "customer_phone";
+  const normalizedPhone = String(d.customer_phone).replace(/,\s*/g, ',').replace(/,+$/, '').trim();
+  if (!/^[6-9]\d{9}(?:,[6-9]\d{9})*$/.test(normalizedPhone)) {
     return "customer_phone";
+  }
+  
   return null;
 }
 
@@ -378,8 +385,11 @@ router.post("/process", async (req, res) => {
         activeCalls.delete(CallSid);
         return res.type("text/xml").send(twiml.toString());
       }
-      speak(twiml, getSilenceResponse(callData.silenceCount));
+      
+      // FIX #9: Preserve critical states during silence
+      // Don't clear awaitingChassisMore or awaitingPhoneMore on silence
       activeCalls.set(CallSid, callData);
+      speak(twiml, getSilenceResponse(callData.silenceCount));
       return res.type("text/xml").send(twiml.toString());
     }
     callData.silenceCount = 0;
@@ -691,17 +701,20 @@ router.post("/process", async (req, res) => {
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // PHONE CONFIRM ANSWER HANDLER
-    // FIX #2: Short ack "haan" → fast-path, no LLM
+    // FIX #1: Synchronize state - always clear flag first, write phone immediately
+    // FIX #2: Prevent state leak - ensure flag is cleared on all paths
     // Handles: "nahi" = wants new number, "haan" = keep existing
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (callData.awaitingPhoneConfirm) {
+      // FIX #1 & #2: Clear flag FIRST to prevent state leak
+      callData.awaitingPhoneConfirm = false;
+      
       const wantsNewNumber = 
         /(change|naya|new|alag|badal|dusra|dusra|dusre|aur|बदल|नया|दूसरा|दूसरे|और)/i.test(userInput) ||
         (/^(nahi|nhi|nai|nahin|no)\b/i.test(userInput.trim()) && /((dusra|dusre|aur|naya|badal|number|नया|दूसरा|और|बदल))/i.test(userInput));
       
       if (wantsNewNumber) {
         // Customer wants to give a new number
-        callData.awaitingPhoneConfirm = false;
         callData.awaitingAlternatePhone = true;
         callData.phonePartials = [];
         callData.phoneAccumulated = "";
@@ -710,22 +723,24 @@ router.post("/process", async (req, res) => {
         return res.type("text/xml").send(twiml.toString());
       }
 
-      callData.awaitingPhoneConfirm = false;
       const foundPhone = parsePhoneFromText(userInput);
 
       // Customer gives a new 10-digit number directly
       if (foundPhone && foundPhone.length === 10 && /^[6-9]/.test(foundPhone)) {
         callData.extractedData.customer_phone = foundPhone;
         console.log(`   ✅ Phone changed directly: ${foundPhone}`);
+        // FIX #1: Flag already cleared above, continue to next field
       }
-      // "nahi" alone = keep existing (per WantsFlow TC-01)
+      // "haan" / positive confirmation = keep existing
       else if (isPositiveConfirmation(userInput) || /^(haan|ha|han|theek|ok|ji|yes)\b/i.test(userInput.trim().toLowerCase())) {
+        // FIX #1: Write phone IMMEDIATELY to extractedData
         callData.extractedData.customer_phone = callData.customerData.phone;
         console.log(`   ✅ Phone confirmed: ${callData.customerData.phone}`);
+        // Flag already cleared above, continue to next field
       }
-      // Unclear — ask again
+      // Unclear — re-ask
       else {
-        callData.awaitingPhoneConfirm = true;
+        callData.awaitingPhoneConfirm = true; // Re-set flag only if unclear
         activeCalls.set(CallSid, callData);
         const lastTwo = String(callData.customerData?.phone || "").slice(-2);
         speak(twiml, `Last mein ${lastTwo} wala number sahi hai ya naya number dena hai?`);
@@ -735,6 +750,7 @@ router.post("/process", async (req, res) => {
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // ALTERNATE PHONE COLLECTION (Fixed for WantsFlow pattern)
+    // FIX #5: Clean phone formatting to prevent double commas
     // Handles: partial numbers, spaced numbers, invalid lengths
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (callData.awaitingAlternatePhone) {
@@ -743,9 +759,10 @@ router.post("/process", async (req, res) => {
       
       if (foundPhone && foundPhone.length === 10 && /^[6-9]/.test(foundPhone)) {
         // Valid 10-digit phone found
-        const orig = callData.customerData?.phone || "";
+        // FIX #5: Clean trailing commas/spaces from original phone
+        const orig = (callData.customerData?.phone || "").replace(/,\s*$/, '').trim();
         callData.extractedData.customer_phone =
-          orig && orig !== foundPhone ? `${orig}, ${foundPhone}` : foundPhone;
+          orig && orig !== foundPhone ? `${orig},${foundPhone}` : foundPhone;
         callData.awaitingAlternatePhone = false;
         callData.phonePartials = [];
         callData.phoneAccumulated = "";
@@ -760,9 +777,10 @@ router.post("/process", async (req, res) => {
           
           if (cleanDigits.length === 10 && /^[6-9]/.test(cleanDigits)) {
             // Valid 10-digit number
-            const orig = callData.customerData?.phone || "";
+            // FIX #5: Clean trailing commas/spaces from original phone
+            const orig = (callData.customerData?.phone || "").replace(/,\s*$/, '').trim();
             callData.extractedData.customer_phone =
-              orig && orig !== cleanDigits ? `${orig}, ${cleanDigits}` : cleanDigits;
+              orig && orig !== cleanDigits ? `${orig},${cleanDigits}` : cleanDigits;
             callData.phonePartials = [];
             callData.phoneAccumulated = "";
             callData.awaitingAlternatePhone = false;
@@ -794,6 +812,7 @@ router.post("/process", async (req, res) => {
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // FIX #4: CITY — no confirmation step, just match and move on
+    // FIX #3: Re-match city after AI extraction to prevent city/city_id mismatch
     // If city extracted but not matched → re-ask with examples
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // (City is matched immediately in the early extraction block above)
@@ -861,11 +880,12 @@ router.post("/process", async (req, res) => {
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // FIX #13: SECOND MACHINE (TC-32 pattern)
+    // FIX #6: Reset ALL state flags including finalConfirmAsked
     // After first complaint done, if customer says "doosri machine"
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (callData.awaitingSecondMachine) {
       callData.awaitingSecondMachine = false;
-      // Reset for second machine
+      // FIX #6: Reset ALL state flags for second machine
       callData.customerData = null;
       callData.extractedData.machine_no = null;
       callData.extractedData.complaint_title = null;
@@ -875,7 +895,9 @@ router.post("/process", async (req, res) => {
       callData.extractedData.city_id = null;
       callData.extractedData.customer_phone = null;
       callData.awaitingFinalConfirm = false;
-      callData.finalConfirmAsked = false;
+      callData.finalConfirmAsked = false; // ✅ Reset this too
+      callData.awaitingPhoneConfirm = false;
+      callData.pendingPhoneConfirm = false;
       callData.machineNotFoundCount = 0;
       callData.chassisPartials = [];
       callData.triedVariations = new Set();
@@ -920,6 +942,7 @@ router.post("/process", async (req, res) => {
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // FINAL CONFIRM ANSWER HANDLER
+    // FIX #4: Detect corrections and reset finalConfirmAsked to allow re-asking
     // FIX #2: Short acks fast-pathed — no LLM
     // "nahi" = no more problems = SUBMIT (per TC analysis)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -928,6 +951,10 @@ router.post("/process", async (req, res) => {
       const isConfirming = isPositiveConfirmation(userInput);
       const noMore = isNoMoreProblems(userInput);
       const isCancel = isHardCancel(userInput);
+      
+      // FIX #4: Check if customer is correcting a field
+      const correcting = /(nahi|galat|wrong|change|badal|nai|nahin)/.test(userInput.toLowerCase()) &&
+                         /(city|shahar|machine|chassis|number|phone|mobile)/.test(userInput.toLowerCase());
 
       // True cancel only ("band karo", "cancel")
       if (isCancel && !noMore) {
@@ -936,9 +963,16 @@ router.post("/process", async (req, res) => {
         activeCalls.delete(CallSid);
         return res.type("text/xml").send(twiml.toString());
       }
-
+      
+      // FIX #4: Customer is correcting data — reset and let AI handle
+      if (correcting) {
+        console.log(`   ⚠️ Customer correcting data during final confirm`);
+        callData.awaitingFinalConfirm = false;
+        callData.finalConfirmAsked = false; // ✅ Allow re-asking after correction
+        // Fall through to AI call to handle the correction
+      }
       // Customer adds more problems
-      if (addingMore.length > 0 && !isConfirming && !noMore) {
+      else if (addingMore.length > 0 && !isConfirming && !noMore) {
         const existingDetails = callData.extractedData.complaint_details
           ? callData.extractedData.complaint_details.split("; ").filter(Boolean)
           : [];
@@ -951,11 +985,12 @@ router.post("/process", async (req, res) => {
         activeCalls.set(CallSid, callData);
         return await handleSubmit(callData, twiml, res, CallSid);
       }
-
       // "nahi" / "haan" / short ack / anything else → SUBMIT
-      callData.awaitingFinalConfirm = false;
-      activeCalls.set(CallSid, callData);
-      return await handleSubmit(callData, twiml, res, CallSid);
+      else {
+        callData.awaitingFinalConfirm = false;
+        activeCalls.set(CallSid, callData);
+        return await handleSubmit(callData, twiml, res, CallSid);
+      }
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -981,6 +1016,9 @@ router.post("/process", async (req, res) => {
 
     const aiResp = await getSmartAIResponse(callData);
 
+    // FIX #3: Track old machine_no before merging AI data
+    const oldMachineNo = callData.extractedData.machine_no;
+    
     // Merge AI-extracted data
     if (aiResp.extractedData) {
       for (const [k, v] of Object.entries(aiResp.extractedData)) {
@@ -993,10 +1031,22 @@ router.post("/process", async (req, res) => {
         else callData.extractedData.city = null;
       }
     }
+    
+    // FIX #3: Check if machine_no changed — invalidate customerData if so
+    if (callData.extractedData.machine_no && 
+        oldMachineNo && 
+        callData.extractedData.machine_no !== oldMachineNo) {
+      console.log(`   ⚠️ Machine number changed: ${oldMachineNo} → ${callData.extractedData.machine_no}`);
+      callData.customerData = null; // ✅ Invalidate stale customer data
+      machineValidated = false; // ✅ Force re-validation
+      callData.finalConfirmAsked = false; // ✅ Allow re-asking final confirm
+    }
 
     // Check again after AI
     const stillMissing = missingField(callData.extractedData);
-    if (!stillMissing && machineValidated && !callData.finalConfirmAsked) {
+    // FIX #3: Re-check machineValidated after potential invalidation
+    const stillValidated = !!callData.customerData;
+    if (!stillMissing && stillValidated && !callData.finalConfirmAsked) {
       callData.awaitingFinalConfirm = true;
       callData.finalConfirmAsked = true;
       callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
@@ -1006,7 +1056,7 @@ router.post("/process", async (req, res) => {
     }
 
     // HARD GUARDS — never submit without validation
-    if (aiResp.readyToSubmit && !machineValidated) {
+    if (aiResp.readyToSubmit && !stillValidated) {
       console.warn("   ⛔ AI ready but machine NOT validated — blocking");
       aiResp.readyToSubmit = false;
     }
@@ -1015,7 +1065,7 @@ router.post("/process", async (req, res) => {
       aiResp.readyToSubmit = false;
     }
 
-    if (aiResp.readyToSubmit && machineValidated && callData.extractedData.customer_phone) {
+    if (aiResp.readyToSubmit && stillValidated && callData.extractedData.customer_phone) {
       callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
       return await handleSubmit(callData, twiml, res, CallSid);
     }
