@@ -1,6 +1,10 @@
-import Groq from 'groq-sdk';
+import { AzureOpenAI } from "openai";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const client = new AzureOpenAI({
+    apiKey: process.env.AZURE_OPENAI_API_KEY,
+    apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview",
+    endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+});
 
 export const SERVICE_CENTERS = [
     { id: 1, city_name: "AJMER", branch_name: "AJMER", branch_code: "1", lat: 26.43488884, lng: 74.698112488 },
@@ -306,8 +310,8 @@ export async function getSmartAIResponse(callData) {
             messages.push({ role: "user", content: "[call connected]" });
         }
 
-        const resp = await groq.chat.completions.create({
-            model: "llama-3.3-70b-versatile",
+        const resp = await client.chat.completions.create({
+            model: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o-mini",
             messages,
             temperature: 0.15,
             max_tokens: 160,
@@ -315,7 +319,7 @@ export async function getSmartAIResponse(callData) {
         });
 
         const raw = resp.choices?.[0]?.message?.content?.trim();
-        if (!raw) throw new Error("Empty Groq response");
+        if (!raw) throw new Error("Empty Azure OpenAI response");
 
         // Parse
         const sepIdx = raw.indexOf("###");
@@ -384,7 +388,7 @@ export async function getSmartAIResponse(callData) {
         return { text: replyText, extractedData: merged, readyToSubmit };
 
     } catch (err) {
-        console.error("❌ [Groq]", err.message);
+        console.error("❌ [Azure OpenAI]", err.message);
         return {
             text: "Ji, bataiye.",
             extractedData: callData.extractedData || {},

@@ -1,6 +1,11 @@
-import Groq from 'groq-sdk';
+import { AzureOpenAI } from "openai";
+import serviceLogger from "./service_logger.js";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const client = new AzureOpenAI({
+    apiKey: process.env.AZURE_OPENAI_API_KEY,
+    apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview",
+    endpoint: process.env.AZURE_OPENAI_ENDPOINT,
+});
 
 export const SERVICE_CENTERS = [
     { id: 1, city_name: "AJMER", branch_name: "AJMER", branch_code: "1", lat: 26.43488884, lng: 74.698112488 },
@@ -186,11 +191,12 @@ You are an AI agent with LOGICAL REASONING and CONTEXTUAL UNDERSTANDING.
    - Show empathy: "Samajh gaya ji" / "Theek hai, main note kar raha hun"
    - Be patient with rural customers who may take time to find documents
 
-5. **Question Handling**:
-   - If customer asks "kitna time lagega?" → Answer: "Engineer jaldi call karega, complaint register hote hi"
-   - If customer asks "kya karna padega?" → Explain the current step clearly
-   - If customer asks "aap kaun?" → "Main Priya, Rajesh Motors se. Aapki complaint register kar rahi hun"
-   - If customer asks about cost/price → "Yeh engineer dekhega ji, pehle complaint register karte hain"
+5. **Question Handling - ALWAYS COMBINE ANSWER + NEXT QUESTION**:
+   - If customer asks "kitna time lagega?" → Answer: "Engineer jaldi call karega. Machine number bataiye?"
+   - If customer asks "kya karna padega?" → Explain: "Complaint register karenge. Machine number bataiye?"
+   - If customer asks "aap kaun?" → "Main Priya, Rajesh Motors se. Machine number bataiye?"
+   - If customer asks about cost/price → "Engineer dekhega. Pehle machine number bataiye?"
+   - **RULE: NEVER answer a side question and stop. ALWAYS add the next required question immediately.**
 
 6. **Error Recovery**:
    - If you asked for machine number and customer gave complaint instead, acknowledge the complaint FIRST: "Theek hai ji, [complaint] note kar liya. Machine number bhi bata dijiye."
@@ -240,7 +246,15 @@ Customer may say many problems in one breath. Capture ALL of them:
   → details: "Engine Not Starting; Oil Leakage; AC Not Working; Brake Failure"
 
 === CONVERSATION FLOW ===
-1. If customer says side things (price, engineer, wait time) → answer VERY briefly then ask your NEXT QUESTION
+1. **SIDE QUESTIONS (CRITICAL)**: If customer asks a side question (like "Who are you?", "How long will engineer take?", "Is my complaint registered?", "What's your name?", "How much will it cost?"), you MUST:
+   - Answer the side question VERY BRIEFLY (1-3 words max)
+   - IMMEDIATELY follow with the NEXT REQUIRED QUESTION in the SAME response
+   - Do NOT wait for another turn
+   - Example: Customer: "Who are you?" → Agent: "Main Priya. Machine number bataiye?"
+   - Example: Customer: "How long will engineer take?" → Agent: "Jaldi aayega. Aapka phone number kya hai?"
+   - Example: Customer: "Is my complaint registered?" → Agent: "Haan, register kar rahe hain. Aur koi problem toh nahi?"
+   - This keeps conversation flowing naturally without breaks or repetition
+
 2. If customer says "ek minute / ruko / dhundh raha" → say "Theek hai." and wait
 3. If machine number not provided → simply ask: "Machine number bataiye"
 4. After complaint collected, ask machine status: "Machine bilkul band hai ya problem ke saath chal rahi hai?"
@@ -260,13 +274,55 @@ VALID CITIES: ${cityList}
 OUTPUT FORMAT — always end response with ### and JSON:
 [your warm short reply] ### {"extracted":{"machine_no":"","complaint_title":"","machine_status":"","city":"","customer_phone":"","complaint_details":"","job_location":"","machine_location_address":""},"ready_to_submit":false}
 
-CRITICAL: Stay on track. Answer side questions briefly then ALWAYS return to the NEXT ACTION above.`;
+CRITICAL: Stay on track. Answer side questions briefly then ALWAYS return to the NEXT ACTION above.
+
+=== SIDE QUESTION HANDLING (CRITICAL - READ THIS) ===
+When customer asks a side question, you MUST combine your answer with the next required question:
+- WRONG: "Main Priya, Rajesh Motors se." [stops]
+- RIGHT: "Main Priya, Rajesh Motors se. Machine number bataiye?"
+
+- WRONG: "Engineer jaldi aayega." [stops]
+- RIGHT: "Engineer jaldi aayega. Aapka phone number kya hai?"
+
+- WRONG: "Haan, complaint register kar rahe hain." [stops]
+- RIGHT: "Haan, complaint register kar rahe hain. Aur koi problem toh nahi?"
+
+ALWAYS include the next required question in the SAME response. This prevents conversation breaks and keeps the flow natural.
+
+=== IMPORTANT ===
+If you don't have information about something (pricing, warranty details, engineer timing, etc.), say:
+"Yeh detail mujhe available nahi hai. Aur information ke liye Rajesh Motors office se contact karein ya engineer ko call karein."
+NEVER make up information. If unsure, admit you don't know.`;
 }
 
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   💰 COST CALCULATION
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function calculateCost(tokens, service) {
+    const pricing = {
+        'azure-openai': 0.0001, // $0.0001 per 1K tokens (rough estimate)
+        'groq': 0.00005,        // $0.00005 per 1K tokens
+        'ollama': 0,            // Free local
+        'openai': 0.0001        // $0.0001 per 1K tokens
+    };
+    
+    const pricePerToken = pricing[service] || 0;
+    const costUSD = (tokens / 1000) * pricePerToken;
+    const costINR = costUSD * 83; // Rough USD to INR conversion
+    
+    return costINR;
+}
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    🤖 MAIN AI CALL
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export async function getSmartAIResponse(callData) {
+    const startTime = Date.now();
+    let service = 'Azure OpenAI';
+    let model = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o-mini";
+    let prompt = '';
+    let response = '';
+    let error = null;
+    
     try {
         callData.extractedData = sanitizeExtractedData(callData.extractedData);
 
@@ -292,11 +348,12 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // machine_status is now collected by asking the customer directly
-        // No auto-guessing here — the AI will ask "Machine bilkul band hai ya problem ke saath chal rahi hai?"
+        // Build system prompt
+        const systemPrompt = buildSystemPrompt(callData);
+        prompt = systemPrompt;
 
         const messages = [
-            { role: "system", content: buildSystemPrompt(callData) },
+            { role: "system", content: systemPrompt },
             ...callData.messages.slice(-8).map(m => ({
                 role: m.role === "user" ? "user" : "assistant",
                 content: m.text,
@@ -306,8 +363,8 @@ export async function getSmartAIResponse(callData) {
             messages.push({ role: "user", content: "[call connected]" });
         }
 
-        const resp = await groq.chat.completions.create({
-            model: "llama-3.3-70b-versatile",
+        const resp = await client.chat.completions.create({
+            model: model,
             messages,
             temperature: 0.15,
             max_tokens: 160,
@@ -315,9 +372,11 @@ export async function getSmartAIResponse(callData) {
         });
 
         const raw = resp.choices?.[0]?.message?.content?.trim();
-        if (!raw) throw new Error("Empty Groq response");
+        if (!raw) throw new Error("Empty Azure OpenAI response");
 
-        // Parse
+        response = raw;
+
+        // Parse response
         const sepIdx = raw.indexOf("###");
         let replyText = sepIdx !== -1 ? raw.slice(0, sepIdx).trim() : raw.trim();
         let extractedJSON = {};
@@ -335,7 +394,7 @@ export async function getSmartAIResponse(callData) {
             } catch { /* ignore */ }
         }
 
-        // Merge extracted data from Groq
+        // Merge extracted data
         const merged = { ...callData.extractedData };
         for (const [k, v] of Object.entries(extractedJSON)) {
             if (!v || v === "NA" || v === "") continue;
@@ -355,7 +414,7 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // City match again after Groq
+        // City match again after AI
         if (merged.city && !merged.city_id) {
             const mc = matchServiceCenter(merged.city);
             if (mc) {
@@ -368,23 +427,61 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // machine_status is now collected by asking the customer directly
-        // No auto-guessing after merge — rely on customer's answer
-
         // Clean reply
         replyText = replyText.replace(/```[\s\S]*?```/g, "").replace(/###[\s\S]*/g, "").trim();
 
         // Validate before marking ready
         if (readyToSubmit) {
             const v = validateExtracted(merged);
-            if (!v.valid) { readyToSubmit = false; console.warn(`⚠️ Not ready: ${v.reason}`); }
+            if (!v.valid) { 
+                readyToSubmit = false; 
+                console.warn(`⚠️ Not ready: ${v.reason}`); 
+            }
         }
+
+        const latency = Date.now() - startTime;
+        const tokens = resp.usage?.total_tokens || 0;
+        const cost = calculateCost(tokens, 'azure-openai');
+
+        // Log successful LLM usage
+        serviceLogger.logLLM(
+            callData.callSid,
+            service,
+            model,
+            prompt,
+            response,
+            {
+                latency,
+                tokens,
+                cost,
+                success: true
+            }
+        );
 
         console.log(`   🤖 AI: "${replyText}" | ready:${readyToSubmit}`);
         return { text: replyText, extractedData: merged, readyToSubmit };
 
     } catch (err) {
-        console.error("❌ [Groq]", err.message);
+        error = err.message;
+        const latency = Date.now() - startTime;
+        
+        // Log failed LLM usage
+        serviceLogger.logLLM(
+            callData.callSid,
+            service,
+            model,
+            prompt,
+            null,
+            {
+                latency,
+                tokens: 0,
+                cost: 0,
+                success: false,
+                error: error
+            }
+        );
+
+        console.error("❌ [Azure OpenAI]", error);
         return {
             text: "Ji, bataiye.",
             extractedData: callData.extractedData || {},

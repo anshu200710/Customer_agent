@@ -1,0 +1,112 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "last_updated": "2026-04-21",
+    "agent_name": "Priya",
+    "company": "Rajesh Motors",
+    "contact": "+91-XXXX-XXXX-XXXX"
+  },
+  
+  "faqs": [
+    {
+      "id": "agent_name",
+      "patterns": ["aap kaun", "tumhara naam", "tum kaun", "main kaun", "kaun bol raha", "aapka naam"],
+      "answer": "Main Priya, Rajesh Motors se. Aapki complaint register kar rahi hun."
+    },
+    {
+      "id": "engineer_timing",
+      "patterns": ["engineer kab", "kitna time", "kab tak", "kab aayega", "engineer kab aayega", "kitna der"],
+      "answer": "Normal complaint mein 2-4 ghante mein engineer call karega. Breakdown urgent hai toh 4-6 ghante mein pahunch jayega."
+    },
+    {
+      "id": "pricing_general",
+      "patterns": ["kitna paisa", "cost", "price", "charges", "kitna lagega", "paisa kitna"],
+      "answer": "Service visit 500-1000 rupees. Oil change 2000-3000. Exact cost engineer dekhega machine check karke."
+    },
+    {
+      "id": "warranty_service",
+      "patterns": ["warranty", "free service", "warranty mein", "warranty hai"],
+      "answer": "Warranty machine ke liye service free hai. Engineer warranty card check karega aur confirm karega."
+    },
+    {
+      "id": "working_hours",
+      "patterns": ["sunday", "holiday", "band", "off", "kab khula", "kab band", "working hours"],
+      "answer": "Monday-Saturday 9 AM - 6 PM. Sunday band hai lekin breakdown ke liye 24/7 emergency service hai."
+    },
+    {
+      "id": "payment_methods",
+      "patterns": ["payment", "paisa kaise", "cash", "online", "card", "upi", "payment method"],
+      "answer": "Cash, card, UPI sab payment methods available hain. Engineer ke paas card machine bhi hoti hai."
+    },
+    {
+      "id": "company_info",
+      "patterns": ["company kaun", "kaunsi company", "rajesh motors", "company name"],
+      "answer": "Rajesh Motors - JCB service center. Hum Rajasthan mein service provide karte hain."
+    },
+    {
+      "id": "contact_info",
+      "patterns": ["contact", "phone", "number", "call", "contact number", "phone number"],
+      "answer": "Aap engineer ko directly call kar sakte hain ya complaint register karke engineer aapko call karega. Aur details ke liye Rajesh Motors office se contact karein."
+    },
+    {
+      "id": "service_types",
+      "patterns": ["kya service", "service kya", "service types", "kya kya service"],
+      "answer": "Hum oil change, filter change, service, breakdown repair, hydraulic repair, electrical repair sab karte hain."
+    },
+    {
+      "id": "breakdown_urgent",
+      "patterns": ["urgent", "jaldi", "emergency", "breakdown", "band ho gaya", "chal nahi raha"],
+      "answer": "Breakdown urgent hai. Immediately complaint register karein. Engineer 4-6 ghante mein pahunch jayega. Machine ko safe place par rakhein."
+    },
+    {
+      "id": "complaint_registration",
+      "patterns": ["complaint register", "complaint kaise", "register kaise", "complaint process"],
+      "answer": "Complaint register karne ke liye machine number, problem description, aur aapka location chahiye. Main sab details le rahi hun."
+    },
+    {
+      "id": "machine_location",
+      "patterns": ["machine kahan", "location", "address", "site", "field", "workshop"],
+      "answer": "Machine kahan hai - workshop mein ya field mein? Yeh batayein taaki engineer ko pata chal jaye."
+    },
+    {
+      "id": "engineer_visit",
+      "patterns": ["engineer aayega", "engineer visit", "engineer aayega kab", "engineer ko bulana"],
+      "answer": "Complaint register hote hi engineer ko message jayega. Woh aapko call karega aur time confirm karega."
+    },
+    {
+      "id": "spare_parts",
+      "patterns": ["spare parts", "parts", "parts available", "parts kahan", "parts cost"],
+      "answer": "Spare parts availability ke liye engineer check karega. Zyada tar parts available hote hain. Exact details engineer batayega."
+    },
+    {
+      "id": "service_warranty",
+      "patterns": ["service warranty", "warranty period", "warranty kitna", "warranty duration"],
+      "answer": "Service warranty details engineer dekhega. Warranty period machine ke purchase date par depend karta hai."
+    },
+    {
+      "id": "follow_up",
+      "patterns": ["follow up", "complaint status", "complaint kya hua", "update", "status kya hai"],
+      "answer": "Complaint status ke liye engineer ko call karein ya Rajesh Motors office se contact karein."
+    },
+    {
+      "id": "cancellation",
+      "patterns": ["cancel", "cancel karna", "complaint cancel", "nahi chahiye"],
+      "answer": "Complaint cancel karni ho toh engineer ko call karein aur batayein."
+    },
+    {
+      "id": "multiple_machines",
+      "patterns": ["multiple machines", "dusri machine", "aur bhi machine", "ek se zyada"],
+      "answer": "Ek ek machine ke liye separate complaint register karni padti hai. Sab machine numbers bataiye."
+    },
+    {
+      "id": "service_quality",
+      "patterns": ["service quality", "quality", "acha service", "service kaisa"],
+      "answer": "Hum best quality service provide karte hain. Agar koi problem ho toh engineer ko batayein."
+    },
+    {
+      "id": "feedback",
+      "patterns": ["feedback", "suggestion", "complaint", "problem", "issue"],
+      "answer": "Aapka feedback important hai. Agar service mein koi problem ho toh Rajesh Motors office ko inform karein."
+    }
+  ]
+}

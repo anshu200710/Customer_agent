@@ -2,6 +2,9 @@ import express from "express";
 import twilio from "twilio";
 import axios from "axios";
 import { getSmartAIResponse, extractAllData, sanitizeExtractedData, matchServiceCenter } from "../utils/ai.js";
+import { searchFAQ, getAgentInfo, getUnavailableMessage } from "../utils/faq.js";
+import { generateSpeech, detectEmotionAndContext, formatNumbersForTTS } from "../utils/cartesia_tts.js";
+import serviceLogger from "../utils/service_logger.js";
 
 const router = express.Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -84,6 +87,10 @@ function isAddMoreProblem(text) {
     return /(\b(aur (problem|complaint|issue|koi aur|bhi)|additional|extra|dusri|phir se complaint|another complaint|aur kuch)\b)/i.test(text) && !isNegativeConfirmation(text);
 }
 
+function formatNumberForTTS(number) {
+    return String(number).split("").join(" ");
+}
+
 function isClarificationQuestion(text) {
     return /(\b(kya|kaun|kab|kaise|kitna|kitne|kahan|kaunse|kis|naam|phone|number|engineer|wait|der|time)\b)/i.test(text)
         && !isPositiveConfirmation(text)
@@ -91,59 +98,330 @@ function isClarificationQuestion(text) {
         && !isAddMoreProblem(text);
 }
 
-function answerSideQuestion(text) {
+function answerSideQuestion(text, callData) {
     const lo = text.toLowerCase();
-    if (/नाम/.test(lo) || /aapka naam/.test(lo) || /tumhara naam/.test(lo) || /main kaun/.test(lo) || /kaun bol raha/.test(lo) || /tum kaun/.test(lo) || /aap kaun/.test(lo)) {
+    
+    // AGENT NAME: Only match direct questions about agent name, not "city name" or "machine name"
+    if (/(aapka naam|tumhara naam|main kaun|kaun bol raha|tum kaun|aap kaun|aap kaunsi|agent kaun|priya kaun)/.test(lo)) {
         return "Main Priya, Rajesh Motors se.";
     }
-    if (/कंपनी|कंप्लेंट|register|register kar|register karna|complaint/.test(lo) && /कब|कहाँ|कितना|नहीं|नहीं/.test(lo) === false) {
-        return "Haan, complaint register karte hain. Pehle machine number bataiye.";
+    
+    // COMPLAINT REGISTRATION: Only if NOT already collecting data
+    if (/(complaint register|complaint kaise|register kaise|complaint process|complaint karna hai)/.test(lo) && !/(kab|kahan|kaise|kitna|details)/.test(lo)) {
+        // Check if we already have machine number
+        if (callData.extractedData.machine_no) {
+            return "Haan, complaint register kar rahe hain. Aur details collect kar rahe hain.";
+        } else {
+            return "Haan, complaint register karte hain. Pehle machine number bataiye.";
+        }
     }
-    if (/engineer/.test(lo) && /(kab|kabhi|aayega|aaega|kab aayega|aayegi)/.test(lo)) {
+    
+    // ENGINEER TIMING: Only if asking about engineer arrival
+    if (/engineer/.test(lo) && /(kab|kabhi|aayega|aaega|kab aayega|aayegi|kitna time|der)/.test(lo)) {
         return "Engineer jaldi call karega.";
     }
-    if (/बदल|change|चेंज|नया नंबर|phone number|mobile number/.test(lo) && /(बता|दे|की)/.test(lo)) {
+    
+    // PHONE NUMBER CHANGE: Only if explicitly asking to change
+    if (/(phone.*change|number.*change|naya number|dusra number|badalna hai)/.test(lo)) {
         return "Haan, naya number bataiye.";
     }
-    if (/(phone|number|mobile)/.test(lo) && /kya|kaun|kaise|bataye|bataiye/.test(lo)) {
+    
+    // PHONE/NUMBER QUESTIONS: Only if asking what phone is for
+    if (/(phone.*kya|number.*kya|phone.*kyun|number.*kyun)/.test(lo)) {
         return "Service call hai, complaint register kar rahi hun.";
     }
-    if (/(kitna der|der|wait|time|kab tak)/.test(lo)) {
+    
+    // WAIT TIME: Only if asking about wait time
+    if (/(kitna der|der|wait|time|kab tak|kitna time)/.test(lo) && /(engineer|call|aayega)/.test(lo)) {
         return "Jaldi engineer call karega.";
     }
-    if (/(kya.*kar.*rahi|kya.*ho.*raha|kaise.*hoga|kaisa.*hai|kaise.*honge)/.test(lo)) {
+    
+    // WHAT ARE YOU DOING: Only if asking what agent is doing
+    if (/(kya.*kar.*rahi|kya.*ho.*raha|kaise.*hoga|kaisa.*hai|kaise.*honge)/.test(lo) && /(aap|tum|main)/.test(lo)) {
         return "Complaint note kar rahi hun.";
     }
+    
     return null;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🔊 TTS
+   🔊 ENHANCED TTS WITH CARTESIA + GOOGLE FALLBACK
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-const TTS_VOICE = "Google.hi-IN-Standard-A";
+const TTS_VOICE = "Google.hi-IN-Standard-A";  // Fallback voice
 const TTS_LANG = "hi-IN";
 
-function speak(twiml, text) {
-    const gather = twiml.gather({
-        input: "speech dtmf",
-        language: TTS_LANG,
-        speechTimeout: 1.5,  // 1.5 seconds pause after customer stops talking
-        timeout: 5,          // 5 seconds wait if customer doesn't speak at all
-        maxSpeechTime: 15,
-        actionOnEmptyResult: true,
-        action: "/voice/process",
-        method: "POST",
-        enhanced: true,
-        speechModel: "phone_call",
-        hints: "0,1,2,3,4,5,6,7,8,9,ek,do,teen,char,paanch,chhe,saat,aath,nau,shunya,machine,number,chassis,complaint,problem,band,khadi,chal,rahi,tel,nikal,garam,dhak,filter,service,Bhilwara,Jaipur,Kota,Ajmer,Udaipur,Alwar,Sikar,Bikaner,Jodhpur,Tonk,Dausa,Bharatpur,Dholpur,Karauli,Nagaur,Pali,Barmer,Chittorgarh,Bundi,Jhalawar,Rajsamand,Dungarpur,Banswara,Pratapgarh,Sirohi,Jalor,Churu,Hanumangarh,Ganganagar,haan,nahi,theek,bilkul,save,register,engineer,jaldi,aayega",
-        profanityFilter: false,
-        bargeIn: false,
-    });
-    gather.say({ voice: TTS_VOICE, language: TTS_LANG }, text);
+/**
+ * Enhanced speak function with Cartesia TTS + Google fallback
+ * @param {Object} twiml - Twilio TwiML object
+ * @param {string} text - Text to speak
+ * @param {Object} options - TTS options
+ */
+async function speak(twiml, text, options = {}) {
+    const startTime = Date.now();
+    let ttsService = 'Google TTS';
+    let voice = TTS_VOICE;
+    let success = false;
+    let error = null;
+    
+    try {
+        // Format numbers for better pronunciation
+        const formattedText = formatNumbersForTTS(text);
+        
+        // Detect emotion and context automatically
+        const { emotion, context } = detectEmotionAndContext(formattedText);
+        
+        console.log(`🎤 [TTS] Text: "${formattedText}" | Emotion: ${emotion} | Context: ${context}`);
+        
+        // Try Cartesia TTS first
+        const cartesiaResult = await generateSpeech(formattedText, {
+            emotion: options.emotion || emotion,
+            context: options.context || context,
+            speed: options.speed || 1.0,
+            callSid: options.callSid
+        });
+        
+        if (cartesiaResult && cartesiaResult.success) {
+            // Success with Cartesia - use high-quality neural voice
+            ttsService = 'Cartesia';
+            voice = 'Arushi-Hindi';
+            success = true;
+            console.log(`✅ [TTS] Using Cartesia Sonic 3 (${cartesiaResult.wavAudio.length} bytes)`);
+            console.log(`🎵 [TTS] Audio ID: ${cartesiaResult.audioId}`);
+            console.log(`⏱️  [TTS] Duration: ${cartesiaResult.duration.toFixed(2)}s`);
+            
+            // Use Cartesia audio streaming instead of Google TTS
+            const audioStreamUrl = `${process.env.PUBLIC_URL}/stream-audio/${cartesiaResult.audioId}`;
+            console.log(`🔗 [TTS] Stream URL: ${audioStreamUrl}`);
+            
+            // Create Twilio gather with speech recognition
+            const gather = twiml.gather({
+                input: "speech dtmf",
+                language: TTS_LANG,
+                speechTimeout: 1.5,
+                timeout: 5,
+                maxSpeechTime: 15,
+                action: options.action || "/voice/process",
+                method: "POST"
+            });
+            
+            // Play Cartesia audio instead of using Google TTS
+            gather.play(audioStreamUrl);
+            
+            // Fallback message if user doesn't respond
+            twiml.redirect(options.redirect || "/voice/handle-silence");
+            
+            return twiml.toString();
+        }
+        
+        // Fallback to Google TTS if Cartesia fails
+        console.log(`⚠️  [TTS] Cartesia failed, falling back to Google TTS`);
+        console.log(`   Error: ${cartesiaResult?.error || 'Unknown error'}`);
+        
+        // Create Twilio gather with speech recognition
+        const gather = twiml.gather({
+            input: "speech dtmf",
+            language: TTS_LANG,
+            speechTimeout: 1.5,
+            timeout: 5,
+            maxSpeechTime: 15,
+            actionOnEmptyResult: true,
+            action: "/voice/process",
+            method: "POST",
+            enhanced: true,
+            speechModel: "phone_call",
+            hints: "0,1,2,3,4,5,6,7,8,9,ek,do,teen,char,paanch,chhe,saat,aath,nau,shunya,machine,number,chassis,complaint,problem,band,khadi,chal,rahi,tel,nikal,garam,dhak,filter,service,Bhilwara,Jaipur,Kota,Ajmer,Udaipur,Alwar,Sikar,Bikaner,Jodhpur,Tonk,Dausa,Bharatpur,Dholpur,Karauli,Nagaur,Pali,Barmer,Chittorgarh,Bundi,Jhalawar,Rajsamand,Dungarpur,Banswara,Pratapgarh,Sirohi,Jalor,Churu,Hanumangarh,Ganganagar,haan,nahi,theek,bilkul,save,register,engineer,jaldi,aayega",
+            profanityFilter: false,
+            bargeIn: false,
+        });
+        
+        // Use Google TTS as the actual voice (Cartesia would need custom audio streaming)
+        gather.say({ voice: TTS_VOICE, language: TTS_LANG }, formattedText);
+        
+        if (!cartesiaAudio) {
+            // Log Google TTS fallback usage
+            const latency = Date.now() - startTime;
+            const cost = calculateTTSCost(formattedText.length, 'google');
+            
+            if (options.callSid) {
+                serviceLogger.logTTS(
+                    options.callSid,
+                    'Google TTS',
+                    TTS_VOICE,
+                    formattedText,
+                    Buffer.from('mock-audio'), // Mock audio data
+                    {
+                        latency,
+                        cost,
+                        emotion: options.emotion || emotion,
+                        context: options.context || context,
+                        success: true
+                    }
+                );
+            }
+            
+            console.log(`🔄 [TTS] Using Google TTS fallback`);
+        }
+        
+    } catch (err) {
+        error = err.message;
+        console.error(`❌ [TTS] Error in speak function:`, error);
+        
+        // Log TTS error
+        if (options.callSid) {
+            const latency = Date.now() - startTime;
+            serviceLogger.logTTS(
+                options.callSid,
+                ttsService,
+                voice,
+                text,
+                null,
+                {
+                    latency,
+                    cost: 0,
+                    emotion: options.emotion || 'professional',
+                    context: options.context || 'general',
+                    success: false,
+                    error: error
+                }
+            );
+        }
+        
+        // Emergency fallback - basic Google TTS
+        const gather = twiml.gather({
+            input: "speech dtmf",
+            language: TTS_LANG,
+            speechTimeout: 1.5,
+            timeout: 5,
+            maxSpeechTime: 15,
+            actionOnEmptyResult: true,
+            action: "/voice/process",
+            method: "POST",
+            enhanced: true,
+            speechModel: "phone_call",
+            hints: "0,1,2,3,4,5,6,7,8,9,ek,do,teen,char,paanch,chhe,saat,aath,nau,shunya,machine,number,chassis,complaint,problem,band,khadi,chal,rahi,tel,nikal,garam,dhak,filter,service,Bhilwara,Jaipur,Kota,Ajmer,Udaipur,Alwar,Sikar,Bikaner,Jodhpur,Tonk,Dausa,Bharatpur,Dholpur,Karauli,Nagaur,Pali,Barmer,Chittorgarh,Bundi,Jhalawar,Rajsamand,Dungarpur,Banswara,Pratapgarh,Sirohi,Jalor,Churu,Hanumangarh,Ganganagar,haan,nahi,theek,bilkul,save,register,engineer,jaldi,aayega",
+            profanityFilter: false,
+            bargeIn: false,
+        });
+        gather.say({ voice: TTS_VOICE, language: TTS_LANG }, text);
+    }
 }
 
-function sayFinal(twiml, text) {
-    twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, text);
+/**
+ * Calculate TTS cost (shared function)
+ */
+function calculateTTSCost(characterCount, service) {
+    const pricing = {
+        'cartesia': 0.00003,    // $0.03 per 1000 characters
+        'google': 0.000016,     // $0.016 per 1000 characters
+        'azure': 0.000016,      // $0.016 per 1000 characters
+        'elevenlabs': 0.00018   // $0.18 per 1000 characters
+    };
+    
+    const pricePerChar = pricing[service] || 0;
+    const costUSD = characterCount * pricePerChar;
+    const costINR = costUSD * 83; // Rough USD to INR conversion
+    
+    return costINR;
+}
+
+/**
+ * Enhanced sayFinal function with Cartesia TTS + Google fallback
+ * @param {Object} twiml - Twilio TwiML object
+ * @param {string} text - Text to speak
+ * @param {Object} options - TTS options
+ */
+async function sayFinal(twiml, text, options = {}) {
+    const startTime = Date.now();
+    let ttsService = 'Google TTS';
+    let voice = TTS_VOICE;
+    let error = null;
+    
+    try {
+        // Format numbers for better pronunciation
+        const formattedText = formatNumbersForTTS(text);
+        
+        // Detect emotion and context automatically
+        const { emotion, context } = detectEmotionAndContext(formattedText);
+        
+        console.log(`🎤 [TTS Final] Text: "${formattedText}" | Emotion: ${emotion} | Context: ${context}`);
+        
+        // Try Cartesia TTS first
+        const cartesiaResult = await generateSpeech(formattedText, {
+            emotion: options.emotion || emotion,
+            context: options.context || context,
+            speed: options.speed || 1.0,
+            callSid: options.callSid
+        });
+        
+        if (cartesiaResult && cartesiaResult.success) {
+            ttsService = 'Cartesia';
+            voice = 'Arushi-Hindi';
+            console.log(`✅ [TTS Final] Using Cartesia Sonic 3 (${cartesiaResult.wavAudio.length} bytes)`);
+            console.log(`🎵 [TTS Final] Audio ID: ${cartesiaResult.audioId}`);
+            console.log(`⏱️  [TTS Final] Duration: ${cartesiaResult.duration.toFixed(2)}s`);
+            
+            // Play Cartesia audio directly
+            const audioStreamUrl = `${process.env.PUBLIC_URL}/stream-audio/${cartesiaResult.audioId}`;
+            console.log(`🔗 [TTS Final] Stream URL: ${audioStreamUrl}`);
+            twiml.play(audioStreamUrl);
+        } else {
+            // Fallback to Google TTS
+            console.log(`⚠️  [TTS Final] Cartesia failed, using Google TTS fallback`);
+            console.log(`   Error: ${cartesiaResult?.error || 'Unknown error'}`);
+            
+            // Log Google TTS fallback usage
+            const latency = Date.now() - startTime;
+            const cost = calculateTTSCost(formattedText.length, 'google');
+            
+            if (options.callSid) {
+                serviceLogger.logTTS(
+                    options.callSid,
+                    'Google TTS',
+                    TTS_VOICE,
+                    formattedText,
+                    Buffer.from('mock-audio'), // Mock audio data
+                    {
+                        latency,
+                        cost,
+                        emotion: options.emotion || emotion,
+                        context: options.context || context,
+                        success: true
+                    }
+                );
+            }
+            
+            console.log(`🔄 [TTS Final] Cartesia failed, using Google TTS fallback`);
+            twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, formattedText);
+        }
+        
+    } catch (err) {
+        error = err.message;
+        console.error(`❌ [TTS Final] Error:`, error);
+        
+        // Log TTS error
+        if (options.callSid) {
+            const latency = Date.now() - startTime;
+            serviceLogger.logTTS(
+                options.callSid,
+                ttsService,
+                voice,
+                text,
+                null,
+                {
+                    latency,
+                    cost: 0,
+                    emotion: options.emotion || 'professional',
+                    context: options.context || 'general',
+                    success: false,
+                    error: error
+                }
+            );
+        }
+        
+        // Emergency fallback - use Google TTS
+        console.log(`🚨 [TTS Final] Emergency fallback to Google TTS`);
+        twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, text);
+    }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -156,6 +434,9 @@ router.post("/", async (req, res) => {
 
     console.log(`\n${"═".repeat(60)}`);
     console.log(`📞 [NEW CALL] ${CallSid} | ${callerPhone} | machine:${preloadedMachineNo || "—"}`);
+
+    // Initialize service logging session
+    serviceLogger.initSession(CallSid, callerPhone);
 
     const twiml = new VoiceResponse();
     try {
@@ -225,12 +506,12 @@ router.post("/", async (req, res) => {
             : "Namaste, Rajesh Motors. Machine number bataiye.";
 
         callData.lastQuestion = greeting;  // Track the question
-        speak(twiml, greeting);
+        await speak(twiml, greeting, { context: 'greeting', emotion: 'friendly', callSid: CallSid });
         res.type("text/xml").send(twiml.toString());
 
     } catch (err) {
         console.error("❌ [START]", err.message);
-        sayFinal(twiml, "Thodi problem aa gayi ji. Thodi der baad call karein.");
+        await sayFinal(twiml, "Thodi problem aa gayi ji. Thodi der baad call karein.", { emotion: 'empathetic', callSid: CallSid });
         twiml.hangup();
         res.type("text/xml").send(twiml.toString());
     }
@@ -281,6 +562,22 @@ router.post("/process", async (req, res) => {
         callData.turnCount++;
         const lo = userInput.toLowerCase();
 
+        // Log STT usage (Twilio's speech recognition)
+        if (SpeechResult) {
+            serviceLogger.logSTT(
+                CallSid,
+                'Twilio',
+                null, // No audio input data available
+                SpeechResult,
+                {
+                    duration: 0, // Not available from Twilio
+                    confidence: 0.8, // Estimated confidence
+                    latency: 0, // Not available
+                    cost: 0 // Included in Twilio call cost
+                }
+            );
+        }
+
         console.log(`\n${"─".repeat(60)}`);
         console.log(`🔄 [TURN ${callData.turnCount}] [${inputMethod}]`);
         if (Digits) {
@@ -292,10 +589,11 @@ router.post("/process", async (req, res) => {
         }
         console.log(`   📊 State: machine=${callData.extractedData.machine_no || "❌"} | attempts=${callData.machineNumberAttempts || 0}`);
 
-        // ── Hard turn limit ─────────────────────────────────────────
+        // Hard turn limit
         if (callData.turnCount > 25) {
             console.log(`   ⚠️  Turn limit reached (25) - ending call`);
-            sayFinal(twiml, "Engineer ko message kar diya ji. Dhanyavaad!");
+            serviceLogger.endSession(CallSid, 'turn_limit');
+            await sayFinal(twiml, "Engineer ko message kar diya ji. Dhanyavaad!", { context: 'farewell', emotion: 'professional', callSid: CallSid });
             twiml.hangup();
             activeCalls.delete(CallSid);
             return res.type("text/xml").send(twiml.toString());
@@ -311,7 +609,8 @@ router.post("/process", async (req, res) => {
             
             if (callData.silenceCount >= maxSilence) {
                 console.log(`   ⚠️  Max silence reached - ending call`);
-                sayFinal(twiml, "Awaaz nahi aa rahi. Dobara call kijiye.");
+                serviceLogger.endSession(CallSid, 'silence_timeout');
+                await sayFinal(twiml, "Awaaz nahi aa rahi. Dobara call kijiye.", { emotion: 'professional', callSid: CallSid });
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
@@ -322,29 +621,30 @@ router.post("/process", async (req, res) => {
             console.log(`   💬 Smart prompt: "${smartPrompt}"`);
             
             callData.lastQuestion = smartPrompt;
-            speak(twiml, smartPrompt);
+            await speak(twiml, smartPrompt, { emotion: 'professional', callSid: CallSid });
             activeCalls.set(CallSid, callData);
             return res.type("text/xml").send(twiml.toString());
         }
         callData.silenceCount = 0;
         console.log(`   ✅ Valid input received - processing`);
 
-        const earlyAnswer = answerSideQuestion(userInput);
-        if (earlyAnswer && !callData.awaitingPhoneConfirm && !callData.awaitingAlternatePhone && !callData.awaitingCityConfirm && !callData.awaitingComplaintAction && !callData.awaitingFinalConfirm) {
-            console.log(`   💡 Side question detected - answering: "${earlyAnswer}"`);
-            callData.messages.push({ role: "assistant", text: earlyAnswer, timestamp: new Date() });
-            activeCalls.set(CallSid, callData);
-            speak(twiml, earlyAnswer);
-            return res.type("text/xml").send(twiml.toString());
-        }
-
         callData.messages.push({ role: "user", text: userInput, timestamp: new Date() });
         console.log(`   📝 User message logged to conversation history`);
+
+        // ── STEP 0: Check FAQ first (before any processing) ─────────────────
+        const faqResult = searchFAQ(userInput);
+        if (faqResult) {
+            console.log(`   📚 FAQ matched: ${faqResult.faqId} - returning instantly`);
+            callData.messages.push({ role: "assistant", text: faqResult.answer, timestamp: new Date() });
+            activeCalls.set(CallSid, callData);
+            await speak(twiml, faqResult.answer, { emotion: 'professional', callSid: CallSid });
+            return res.type("text/xml").send(twiml.toString());
+        }
 
         // ── STEP 1: Fast regex extraction ───────────────────────────
         callData.extractedData = sanitizeExtractedData(callData.extractedData);
 
-        // ── STEP 1: Extract data from user input ────────────────────
+        // Extract data from user input
         const rxData = extractAllData(userInput, callData.extractedData);
         for (const [k, v] of Object.entries(rxData)) {
             if (v && !callData.extractedData[k]) callData.extractedData[k] = v;
@@ -408,7 +708,7 @@ router.post("/process", async (req, res) => {
                     console.log(`   🔄 Retry attempt 1 - asking for speech input again`);
                     callData.lastQuestion = prompt;
                     activeCalls.set(CallSid, callData);
-                    speak(twiml, prompt);
+                    await speak(twiml, prompt, { emotion: 'professional', callSid: CallSid });
                     return res.type("text/xml").send(twiml.toString());
                 }
                 
@@ -418,14 +718,14 @@ router.post("/process", async (req, res) => {
                     console.log(`   ⌨️  Retry attempt 2 - DTMF ONLY (no more speech)`);
                     callData.lastQuestion = prompt;
                     activeCalls.set(CallSid, callData);
-                    speak(twiml, prompt);
+                    await speak(twiml, prompt, { emotion: 'professional', callSid: CallSid });
                     return res.type("text/xml").send(twiml.toString());
                 }
 
                 // Attempt 3+: Give up and escalate
                 if (callData.machineNumberAttempts >= 3) {
                     console.log(`   ⛔ Max attempts reached (3) - escalating to engineer`);
-                    sayFinal(twiml, "Machine number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!");
+                    await sayFinal(twiml, "Machine number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!", { context: 'farewell', emotion: 'empathetic' });
                     twiml.hangup();
                     activeCalls.delete(CallSid);
                     return res.type("text/xml").send(twiml.toString());
@@ -444,7 +744,7 @@ router.post("/process", async (req, res) => {
             callData.lastQuestion = prompt;
             console.log(`   📞 Phone confirmation prompt - asking about number ending in ${lastTwo}`);
             activeCalls.set(CallSid, callData);
-            speak(twiml, prompt);
+            await speak(twiml, prompt, { emotion: 'professional', callSid: CallSid });
             return res.type("text/xml").send(twiml.toString());
         }
 
@@ -466,7 +766,7 @@ router.post("/process", async (req, res) => {
                     callData.lastQuestion = prompt;
                     console.log(`   🔄 User wants to change phone - asking for alternate`);
                     activeCalls.set(CallSid, callData);
-                    speak(twiml, prompt);
+                    await speak(twiml, prompt, { emotion: 'professional' });
                     return res.type("text/xml").send(twiml.toString());
                 }
             }
@@ -474,7 +774,7 @@ router.post("/process", async (req, res) => {
             console.log(`   ➡️  Phone handling complete - continuing to next step`);
         }
 
-        // ── STEP 6.1: Handle alternate phone number ──────────────────
+        // ── STEP 7: Handle alternate phone number ──────────────────
         if (callData.awaitingAlternatePhone) {
             callData.awaitingAlternatePhone = false;
             const foundPhone = parsePhoneFromText(userInput);
@@ -494,12 +794,12 @@ router.post("/process", async (req, res) => {
                 const prompt = "Thoda clearly 10 digit ka mobile number bataiye.";
                 callData.lastQuestion = prompt;
                 activeCalls.set(CallSid, callData);
-                speak(twiml, prompt);
+                await speak(twiml, prompt, { emotion: 'professional' });
                 return res.type("text/xml").send(twiml.toString());
             }
         }
 
-        // ── STEP 6.7: City & Branch confirmation ────────────────────
+        // ── STEP 8: City & Branch confirmation ────────────────────
         if (callData.pendingCityConfirm) {
             callData.pendingCityConfirm = false;
             callData.awaitingCityConfirm = true;
@@ -517,7 +817,7 @@ router.post("/process", async (req, res) => {
             callData.lastQuestion = prompt;
             console.log(`   🗺️  City confirmation prompt - ${callData.extractedData.city} → ${callData.extractedData.branch}`);
             activeCalls.set(CallSid, callData);
-            speak(twiml, prompt);
+            await speak(twiml, prompt, { emotion: 'professional' });
             return res.type("text/xml").send(twiml.toString());
         }
 
@@ -537,12 +837,25 @@ router.post("/process", async (req, res) => {
                 callData.lastQuestion = prompt;
                 console.log(`   🔄 City rejected - asking again`);
                 activeCalls.set(CallSid, callData);
-                speak(twiml, prompt);
+                await speak(twiml, prompt, { emotion: 'professional' });
                 return res.type("text/xml").send(twiml.toString());
             }
         }
 
-        // ── STEP 7: Existing complaint scenario ─────────────────────
+        // ── STEP 9: Check for side questions (AFTER confirmations) ────────
+        let sideQuestionAnswer = null;
+        const earlyAnswer = answerSideQuestion(userInput, callData);
+        if (earlyAnswer) {
+            console.log(`   💡 Side question detected - answering: "${earlyAnswer}"`);
+            callData.messages.push({ role: "assistant", text: earlyAnswer, timestamp: new Date() });
+            sideQuestionAnswer = earlyAnswer;
+            
+            // Store side question answer but DON'T return/exit
+            // Continue to LLM to ask the next required question
+            console.log(`   ➡️  Side question answered - continuing to LLM for next question`);
+        }
+
+        // ── STEP 10: Existing complaint scenario ─────────────────────
         if (!callData.awaitingComplaintAction) {
             const repeatRx = /(pehle complaint|already complaint|complaint kar di|complaint ki thi|engineer nahi aaya|engineer nhi aaya|aaya nahi|kab aayega|bahut der|kal se wait|2 din|3 din|dobara complaint|phir se complaint|re-register)/i;
             if (repeatRx.test(lo)) {
@@ -565,27 +878,27 @@ router.post("/process", async (req, res) => {
                     callData.lastQuestion = prompt;
                     console.log(`   📋 Existing complaint found: ${existingInfo.complaintId} - asking for action`);
                     activeCalls.set(CallSid, callData);
-                    speak(twiml, prompt);
+                    await speak(twiml, prompt, { emotion: 'professional' });
                 } else {
                     callData.awaitingComplaintAction = false;
                     const prompt = "Pehli complaint nahi mili. Nayi register karta hun. Chassis number bataiye.";
                     callData.lastQuestion = prompt;
                     console.log(`   ℹ️  No existing complaint found - proceeding with new registration`);
                     activeCalls.set(CallSid, callData);
-                    speak(twiml, prompt);
+                    await speak(twiml, prompt, { emotion: 'professional' });
                 }
                 return res.type("text/xml").send(twiml.toString());
             }
         }
 
-        // ── STEP 8: Handle complaint-action choice ───────────────────
+        // ── STEP 11: Handle complaint-action choice ───────────────────
         if (callData.awaitingComplaintAction) {
             callData.awaitingComplaintAction = false;
             const wantsUrgent = /(urgent|jaldi|message|engineer ko|escalate|priority)/i.test(lo);
             if (wantsUrgent) {
                 await escalateToEngineer(callData.existingComplaintId, callData.callingNumber);
                 console.log(`   🚨 Escalated existing complaint: ${callData.existingComplaintId}`);
-                sayFinal(twiml, "Bilkul. Engineer ko urgent message bhej diya. Jaldi aayega. Dhanyavaad!");
+                await sayFinal(twiml, "Bilkul. Engineer ko urgent message bhej diya. Jaldi aayega. Dhanyavaad!", { context: 'farewell', emotion: 'professional' });
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
@@ -594,7 +907,7 @@ router.post("/process", async (req, res) => {
             console.log(`   ➡️  User wants new complaint - continuing to AI`);
         }
 
-        // ── STEP 9: "Aur kuch bhi?" final confirmation ──────────────
+        // ── STEP 12: "Aur kuch bhi?" final confirmation ──────────────
         // Triggered once all fields are collected — ask before submit
         const missing = missingField(callData.extractedData);
         const machineValidated = !!callData.customerData;
@@ -605,7 +918,7 @@ router.post("/process", async (req, res) => {
                 callData.awaitingFinalConfirm = true;
                 console.log(`   💬 Side question answered - proceeding to final confirmation`);
                 activeCalls.set(CallSid, callData);
-                twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, sideAnswer);
+                await sayFinal(twiml, sideAnswer, { emotion: 'professional' });
                 return await handleSubmit(callData, twiml, res, CallSid);
             }
 
@@ -614,11 +927,11 @@ router.post("/process", async (req, res) => {
             callData.lastQuestion = prompt;
             console.log(`   ✅ All data collected - asking final confirmation`);
             activeCalls.set(CallSid, callData);
-            speak(twiml, prompt);
+            await speak(twiml, prompt, { emotion: 'professional' });
             return res.type("text/xml").send(twiml.toString());
         }
 
-        // ── STEP 10: Handle final confirm answer ─────────────────────
+        // ── STEP 13: Handle final confirm answer ─────────────────────
         if (callData.awaitingFinalConfirm) {
             const addingMore = extractAllComplaintTitles(userInput);
             const isConfirming = isPositiveConfirmation(lo);
@@ -627,7 +940,7 @@ router.post("/process", async (req, res) => {
 
             if (isNegative) {
                 console.log(`   ❌ User declined final confirmation - ending call`);
-                sayFinal(twiml, "Theek hai. Agar kuch aur ho toh dobara call karein. Dhanyavaad!");
+                await sayFinal(twiml, "Theek hai. Agar kuch aur ho toh dobara call karein. Dhanyavaad!", { context: 'farewell', emotion: 'professional' });
                 twiml.hangup();
                 activeCalls.delete(CallSid);
                 return res.type("text/xml").send(twiml.toString());
@@ -651,7 +964,7 @@ router.post("/process", async (req, res) => {
             const sideAnswer = answerSideQuestion(userInput);
             if (sideAnswer && !isConfirming) {
                 console.log(`   💬 Side question during final confirm - answering and submitting`);
-                twiml.say({ voice: TTS_VOICE, language: TTS_LANG }, sideAnswer);
+                await sayFinal(twiml, sideAnswer, { emotion: 'professional' });
                 callData.awaitingFinalConfirm = false;
                 activeCalls.set(CallSid, callData);
                 return await handleSubmit(callData, twiml, res, CallSid);
@@ -670,7 +983,7 @@ router.post("/process", async (req, res) => {
             return await handleSubmit(callData, twiml, res, CallSid);
         }
 
-        // ── STEP 11: LLM-FIRST APPROACH with Hardcoded Fallback ──────────────────────────────────────
+        // ── STEP 14: LLM-FIRST APPROACH with Hardcoded Fallback ──────────────────────────────────────
         console.log(`   📊 Current State: ${JSON.stringify({
             machine: callData.extractedData.machine_no || "❌",
             complaint: callData.extractedData.complaint_title || "❌",
@@ -687,7 +1000,7 @@ router.post("/process", async (req, res) => {
             callData.lastQuestion = fallbackPrompt;
             console.log(`   ⚠️  Reached AI section with complete data - using hardcoded fallback`);
             activeCalls.set(CallSid, callData);
-            speak(twiml, fallbackPrompt);
+            await speak(twiml, fallbackPrompt, { emotion: 'professional' });
             return res.type("text/xml").send(twiml.toString());
         }
 
@@ -747,7 +1060,7 @@ router.post("/process", async (req, res) => {
             callData.lastQuestion = finalQuestion;
             callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
             activeCalls.set(CallSid, callData);
-            speak(twiml, finalQuestion);
+            await speak(twiml, finalQuestion, { emotion: 'professional' });
             return res.type("text/xml").send(twiml.toString());
         }
 
@@ -767,9 +1080,9 @@ router.post("/process", async (req, res) => {
             
             if (id) {
                 const idFormatted = formatNumberForTTS(id);
-                sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${idFormatted}. Engineer jaldi contact karega. Dhanyavaad!`);
+                await sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${idFormatted}. Engineer jaldi contact karega. Dhanyavaad!`, { context: 'confirmation', emotion: 'professional' });
             } else {
-                sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!");
+                await sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!", { context: 'confirmation', emotion: 'professional' });
             }
             twiml.hangup();
             activeCalls.delete(CallSid);
@@ -778,12 +1091,24 @@ router.post("/process", async (req, res) => {
 
         callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
         activeCalls.set(CallSid, callData);
-        speak(twiml, aiResp.text);
+        
+        // Log turn completion
+        serviceLogger.logTurn(CallSid);
+        
+        // If we answered a side question, combine both responses
+        if (sideQuestionAnswer) {
+            console.log(`   📢 Combining side question answer + LLM response`);
+            const combinedText = `${sideQuestionAnswer} ${aiResp.text}`;
+            await speak(twiml, combinedText, { emotion: 'professional', callSid: CallSid });
+        } else {
+            await speak(twiml, aiResp.text, { emotion: 'professional', callSid: CallSid });
+        }
+        
         res.type("text/xml").send(twiml.toString());
 
     } catch (err) {
         console.error("❌ [PROCESS]", err.message);
-        sayFinal(twiml, "Thodi dikkat aa gayi ji. Engineer ko bhej raha hun.");
+        await sayFinal(twiml, "Thodi dikkat aa gayi ji. Engineer ko bhej raha hun.", { emotion: 'empathetic' });
         twiml.dial(process.env.HUMAN_AGENT_NUMBER || "+919876543210");
         activeCalls.delete(CallSid);
         res.type("text/xml").send(twiml.toString());
@@ -799,9 +1124,9 @@ async function handleSubmit(callData, twiml, res, CallSid) {
     const id = result.sapId || result.jobId || "";
 
     if (id) {
-        sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`);
+        await sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${String(id).split("").join(" ")}. Engineer jaldi contact karega. Dhanyavaad!`, { context: 'confirmation', emotion: 'professional' });
     } else {
-        sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!");
+        await sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!", { context: 'confirmation', emotion: 'professional' });
     }
 
     twiml.hangup();

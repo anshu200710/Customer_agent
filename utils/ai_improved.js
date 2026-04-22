@@ -1,6 +1,10 @@
-import Groq from 'groq-sdk';
+import { AzureOpenAI } from "openai";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const client = new AzureOpenAI({
+    apiKey: process.env.AZURE_OPENAI_API_KEY,
+    apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview",
+    baseURL: `${process.env.AZURE_OPENAI_ENDPOINT}v1/`,
+});
 
 export const SERVICE_CENTERS = [
     { id: 1, city_name: "AJMER", branch_name: "AJMER", branch_code: "1", lat: 26.43488884, lng: 74.698112488 },
