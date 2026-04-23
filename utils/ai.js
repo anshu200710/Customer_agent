@@ -312,6 +312,110 @@ function calculateCost(tokens, service) {
     
     return costINR;
 }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   🧠 AI-POWERED ENTITY EXTRACTION
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+function normalizeExtractedValue(value) {
+    if (value == null) return null;
+    if (typeof value !== 'string') return value;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^(not collected|not found|unknown|na|n\/a|none|empty)$/i.test(trimmed)) return null;
+    return trimmed;
+}
+
+export async function extractEntities(userInput, callData) {
+    const startTime = Date.now();
+    
+    try {
+        // Build minimal extraction prompt
+        const extractionPrompt = `Extract entities from this user input for a JCB complaint system.
+
+User Input: "${userInput}"
+
+Current Context:
+- Machine Number: ${callData.extractedData.machine_no || 'not collected'}
+- Complaint: ${callData.extractedData.complaint_title || 'not collected'}
+- City: ${callData.extractedData.city || 'not collected'}
+- Phone: ${callData.extractedData.customer_phone || 'not collected'}
+
+Classify the user's INTENT and extract ENTITIES. Return ONLY valid JSON:
+
+{
+  "intent": "provide_info" | "side_question" | "confirm" | "deny" | "ask_clarification",
+  "confirm_type": "yes" | "no" | null,
+  "entities": {
+    "machine_no": "1234567" | null,
+    "complaint_title": "Engine Not Starting" | null,
+    "machine_status": "Breakdown" | "Running With Problem" | null,
+    "city": "JAIPUR" | null,
+    "customer_phone": "9876543210" | null,
+    "complaint_details": "Oil Leakage; Brake Failure" | null
+  }
+}
+
+Rules:
+- Intent "provide_info": User is giving complaint/machine/city/phone info
+- Intent "side_question": User is asking about process/cost/time/agent name
+- Intent "confirm": User is saying yes/haan/theek hai
+- Intent "deny": User is saying no/nahi
+- Extract machine numbers as 4-7 digit strings
+- Extract phone as 10-digit Indian numbers
+- Use exact city names from: ${SERVICE_CENTERS.map(c => c.city_name).join(', ')}
+- complaint_title should be primary problem in English
+- machine_status: "Breakdown" if completely stopped, "Running With Problem" if still working`;
+
+        const messages = [
+            { role: "system", content: "You are an entity extraction AI. Return ONLY valid JSON. No explanations." },
+            { role: "user", content: extractionPrompt }
+        ];
+
+        const resp = await client.chat.completions.create({
+            model: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o-mini",
+            messages,
+            temperature: 0.1,
+            max_tokens: 200,
+        });
+
+        const raw = resp.choices?.[0]?.message?.content?.trim();
+        if (!raw) {
+            console.error('❌ Empty extraction response');
+            return { intent: 'provide_info', entities: {} };
+        }
+
+        // Parse JSON response
+        let parsed;
+        try {
+            // Remove any markdown formatting
+            const cleanJson = raw.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+            parsed = JSON.parse(cleanJson);
+        } catch (e) {
+            console.error('❌ Failed to parse extraction JSON:', raw);
+            return { intent: 'provide_info', entities: {} };
+        }
+
+        const cleanedEntities = {};
+        for (const [k, v] of Object.entries(parsed.entities || {})) {
+            cleanedEntities[k] = normalizeExtractedValue(v);
+        }
+
+        const latency = Date.now() - startTime;
+        console.log(`   🧠 Entity extraction: ${normalizeExtractedValue(parsed.intent) || 'provide_info'} | ${JSON.stringify(cleanedEntities)} (${latency}ms)`);
+
+        return {
+            intent: normalizeExtractedValue(parsed.intent) || 'provide_info',
+            confirm_type: normalizeExtractedValue(parsed.confirm_type) || null,
+            entities: cleanedEntities,
+            ...cleanedEntities
+        };
+
+    } catch (err) {
+        console.error('❌ Entity extraction failed:', err.message);
+        return { intent: 'provide_info', entities: {} };
+    }
+}
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    🤖 MAIN AI CALL
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -397,20 +501,21 @@ export async function getSmartAIResponse(callData) {
         // Merge extracted data
         const merged = { ...callData.extractedData };
         for (const [k, v] of Object.entries(extractedJSON)) {
-            if (!v || v === "NA" || v === "") continue;
+            const cleanValue = normalizeExtractedValue(v);
+            if (!cleanValue || cleanValue === "NA" || cleanValue === "") continue;
             if (k === "customer_phone") {
-                const ph = String(v).replace(/[\s\-]/g, "");
+                const ph = String(cleanValue).replace(/[\s\-]/g, "");
                 if (/^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(ph)) merged.customer_phone = ph;
             } else if (k === "complaint_details") {
                 const existing = (merged.complaint_details || '').split('; ').map(s => s.trim()).filter(Boolean);
-                const incoming = String(v).split('; ').map(s => s.trim()).filter(Boolean);
+                const incoming = String(cleanValue).split('; ').map(s => s.trim()).filter(Boolean);
                 const combined = [...existing];
                 for (const item of incoming) {
                     if (!combined.includes(item)) combined.push(item);
                 }
                 merged.complaint_details = combined.join('; ');
             } else {
-                merged[k] = v;
+                merged[k] = cleanValue;
             }
         }
 
@@ -444,8 +549,9 @@ export async function getSmartAIResponse(callData) {
         const cost = calculateCost(tokens, 'azure-openai');
 
         // Log successful LLM usage
+        const callSid = callData?.CallSid || callData?.callSid || null;
         serviceLogger.logLLM(
-            callData.callSid,
+            callSid,
             service,
             model,
             prompt,
@@ -512,23 +618,39 @@ export function extractAllData(text, cur = {}) {
 
     // ── Machine number (4-7 digits) ──────────────────────────────
     if (!cur.machine_no) {
-        let noPhone = text.replace(/[6-9]\d{9}/g, '');
-        const digitsOnly = noPhone.replace(/[^0-9]/g, '');
-        for (let len = 7; len >= 4; len--) {
-            for (let i = 0; i <= digitsOnly.length - len; i++) {
-                const chunk = digitsOnly.slice(i, i + len);
-                if (/^[6-9]/.test(chunk) && digitsOnly.length >= 10) continue;
-                ex.machine_no = chunk;
-                break;
+        // Remove any phone-like 10-digit sequences before searching for a chassis number.
+        const phoneLike = text.replace(/(?:[6-9][\s\-\.,]*){10,}/g, '');
+        const noPhone = phoneLike.replace(/[6-9]\d{9}/g, '');
+
+        // Prefer explicit labels like chassis/machine/serial number.
+        const labelRx = /(chassis|machine|serial|s\.no|s no|machine no|chassis no|serial no|सीरियल|चेसिस|मशीन)\s*(?:number|no|n\.?|नं(?:\.?)|नंबर)?[\s:\-]*([0-9][0-9\-\s]{3,20})/i;
+        const explicitMatch = text.match(labelRx);
+        if (explicitMatch) {
+            const digits = explicitMatch[2].replace(/[^0-9]/g, '');
+            if (/^\d{4,7}$/.test(digits)) {
+                ex.machine_no = digits;
             }
-            if (ex.machine_no) break;
+        }
+
+        if (!ex.machine_no) {
+            const digitsOnly = noPhone.replace(/[^0-9]/g, '');
+            for (let len = 7; len >= 4; len--) {
+                for (let i = 0; i <= digitsOnly.length - len; i++) {
+                    const chunk = digitsOnly.slice(i, i + len);
+                    if (/^[6-9]/.test(chunk) && digitsOnly.length >= 10) continue;
+                    ex.machine_no = chunk;
+                    break;
+                }
+                if (ex.machine_no) break;
+            }
         }
     }
 
     // ── Phone (10 digit Indian) ───────────────────────────────────
     if (!cur.customer_phone || !/^[6-9]\d{9}$/.test(cur.customer_phone)) {
-        const compact = text.replace(/[\s\-,।\.]/g, "");
+        const compact = text.replace(/[\s\-\.,।]/g, "");
         const nums = compact.match(/\d+/g) || [];
+
         for (const seq of nums) {
             if (/^[6-9]\d{9}$/.test(seq)) { ex.customer_phone = seq; break; }
             for (let i = 0; i <= seq.length - 10; i++) {
@@ -536,6 +658,16 @@ export function extractAllData(text, cur = {}) {
                 if (/^[6-9]\d{9}$/.test(ch)) { ex.customer_phone = ch; break; }
             }
             if (ex.customer_phone) break;
+        }
+
+        if (!ex.customer_phone) {
+            // Try to extract phone from phrases like "my number is..." with spaced digits.
+            const phoneLabelRx = /(?:mobile|phone|number|nambar|नंबर|फोन)\s*(?:is|hai|no|n\.?|nambar)?\s*([0-9\s\-]{10,25})/i;
+            const phoneMatch = text.match(phoneLabelRx);
+            if (phoneMatch) {
+                const digits = phoneMatch[1].replace(/[^0-9]/g, '');
+                if (/^[6-9]\d{9}$/.test(digits)) ex.customer_phone = digits;
+            }
         }
     }
 
@@ -665,9 +797,14 @@ function validateExtracted(data) {
 
 export function sanitizeExtractedData(data) {
     const c = { ...data };
+    if (c.customer_phone) c.customer_phone = normalizeExtractedValue(c.customer_phone);
+    if (c.machine_no) c.machine_no = normalizeExtractedValue(c.machine_no);
+    if (c.complaint_title) c.complaint_title = normalizeExtractedValue(c.complaint_title);
+    if (!c.complaint_title && c.complaint_details) c.complaint_title = normalizeExtractedValue(c.complaint_details);
     if (c.customer_phone && !/^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(String(c.customer_phone))) c.customer_phone = null;
     if (c.machine_no && !/^\d{4,7}$/.test(c.machine_no)) c.machine_no = null;
+    if (c.complaint_title && /^(not collected|unknown|na|n\/a|none|empty)$/i.test(String(c.complaint_title).trim())) c.complaint_title = null;
     return c;
 }
 
-export default { getSmartAIResponse, extractAllData, matchServiceCenter, sanitizeExtractedData };
+export default { getSmartAIResponse, extractEntities, extractAllData, sanitizeExtractedData, matchServiceCenter };

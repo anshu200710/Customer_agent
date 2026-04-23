@@ -412,17 +412,9 @@ function addEmotionTags(text, emotion, context) {
             break;
     }
 
-    // Add natural pauses for better flow (safe to add always)
-    console.log(`\n🔄 [STEP 3] Adding natural pauses`);
-    const beforePauses = enhancedText;
-    enhancedText = enhancedText.replace(/\. /g, '. <break time="0.3s"/> ');
-    enhancedText = enhancedText.replace(/\? /g, '? <break time="0.2s"/> ');
-    
-    if (beforePauses !== enhancedText) {
-        console.log(`   ✅ Added natural pauses`);
-    } else {
-        console.log(`   ⏭️  No pauses needed`);
-    }
+    // Skip pause markup - Cartesia handles natural pausing automatically
+    console.log(`\n🔄 [STEP 3] Skipping pause markup for faster generation`);
+    console.log(`   ⏭️  Natural pauses handled by Cartesia - no markup needed`);
 
     console.log(`\n📤 [FINAL OUTPUT] Enhanced Text: "${enhancedText}"`);
     
@@ -478,12 +470,15 @@ export function detectEmotionAndContext(text) {
 /**
  * Format numbers for better TTS pronunciation
  * @param {string} text - Text containing numbers
- * @returns {string} Text with formatted numbers
+ * @returns {string} Text with formatted numbers (only complaint/job IDs)
  */
 export function formatNumbersForTTS(text) {
-    // Format complaint IDs and machine numbers for better pronunciation
-    return text.replace(/\b(\d{4,})\b/g, (match) => {
-        return match.split('').join(' ');
+    // Only spell out complaint/job IDs (marked with "Number hai" or "complaint" prefix)
+    // This keeps natural pronunciation for machine numbers and other numeric data
+    return text.replace(/Number hai (\d+)/gi, (match, id) => {
+        return `Number hai ${id.split('').join(' ')}`;
+    }).replace(/complaint (\d{6,})/gi, (match, id) => {
+        return `complaint ${id.split('').join(' ')}`;
     });
 }
 
