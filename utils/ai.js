@@ -1,4 +1,5 @@
 import { AzureOpenAI } from "openai";
+import axios from "axios";
 import serviceLogger from "./service_logger.js";
 
 const client = new AzureOpenAI({
@@ -6,6 +7,28 @@ const client = new AzureOpenAI({
     apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview",
     endpoint: process.env.AZURE_OPENAI_ENDPOINT,
 });
+
+// Response cache for common phrases
+const responseCache = new Map();
+const CACHE_MAX_SIZE = 100;
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+function getCachedResponse(key) {
+    const cached = responseCache.get(key);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+        return cached.response;
+    }
+    responseCache.delete(key);
+    return null;
+}
+
+function setCachedResponse(key, response) {
+    if (responseCache.size >= CACHE_MAX_SIZE) {
+        const firstKey = responseCache.keys().next().value;
+        responseCache.delete(firstKey);
+    }
+    responseCache.set(key, { response, timestamp: Date.now() });
+}
 
 export const SERVICE_CENTERS = [
     { id: 1, city_name: "AJMER", branch_name: "AJMER", branch_code: "1", lat: 26.43488884, lng: 74.698112488 },
@@ -61,238 +84,23 @@ export const SERVICE_CENTERS = [
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function buildSystemPrompt(callData) {
     const d = callData.extractedData;
-    const customer = callData.customerData
-        ? `Identified: ${callData.customerData.name}, Machine: ${callData.customerData.machineNo}, Phone: ${callData.customerData.phone}`
-        : `Not identified yet`;
-
-    const have = [];
-    const need = [];
-    const fields = {
-        machine_no: d.machine_no,
-        complaint_title: d.complaint_title,
-        machine_status: d.machine_status,
-        city: d.city,
-        city_id: d.city_id,
-        customer_phone: d.customer_phone && /^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(String(d.customer_phone)) ? d.customer_phone : null,
-    };
-    for (const [k, v] of Object.entries(fields)) {
-        if (v) have.push(`${k}=${v}`); else need.push(k);
-    }
-
-    const cityList = SERVICE_CENTERS.map(c => c.city_name).join(", ");
-
-    // Track validated vs collected fields
-    const validated = [];
-    const pending = [];
+    const cityList = SERVICE_CENTERS.map(c => c.city_name).join(', ');
     
-    for (const [k, v] of Object.entries(fields)) {
-        if (v) {
-            if (k === 'machine_no' && callData.customerData) {
-                validated.push(`${k} ✅ VALIDATED`);
-            } else {
-                validated.push(`${k} ✅ COLLECTED`);
-            }
-        }
-    }
-    
-    // Detect pending confirmations
-    if (callData.pendingPhoneConfirm || callData.awaitingPhoneConfirm) {
-        pending.push("phone_confirmation");
-    }
-    if (callData.pendingCityConfirm || callData.awaitingCityConfirm) {
-        pending.push("city_confirmation");
-    }
-    if (callData.awaitingFinalConfirm) {
-        pending.push("final_confirmation");
-    }
-    
-    // Build "DO NOT ASK" list
-    const doNotAsk = [];
-    if (d.machine_no) doNotAsk.push("machine_no (already " + (callData.customerData ? "validated" : "collected") + ")");
-    if (d.complaint_title) doNotAsk.push("complaint_title (already collected)");
-    if (d.machine_status) doNotAsk.push("machine_status (already collected)");
-    if (d.city) doNotAsk.push("city (already collected)");
-    if (d.customer_phone) doNotAsk.push("customer_phone (already collected)");
-    
-    // Build transaction log
-    const transactionLog = [];
-    if (callData.customerData) {
-        transactionLog.push(`✅ Machine ${callData.customerData.machineNo} validated → ${callData.customerData.name}`);
-    }
-    if (d.complaint_title) {
-        transactionLog.push(`✅ Complaint collected: ${d.complaint_title}`);
-    }
-    if (d.machine_status) {
-        transactionLog.push(`✅ Machine status: ${d.machine_status}`);
-    }
-    if (d.city) {
-        transactionLog.push(`✅ City collected: ${d.city}`);
-    }
-    if (d.customer_phone) {
-        transactionLog.push(`✅ Phone collected: ${d.customer_phone}`);
-    }
-    
-    // Get last agent message
-    const lastAgentMessage = callData.messages.filter(m => m.role === 'assistant').slice(-1)[0]?.text || '';
-
-    // Determine the single most important next question
-    let nextQuestion = "";
-    if (!d.machine_no) nextQuestion = "Ask for chassis/machine number (4-7 digit number).";
-    else if (!d.complaint_title) nextQuestion = "Ask what problem the machine has.";
-    else if (!d.machine_status) nextQuestion = "Ask: 'Machine bilkul band hai ya problem ke saath chal rahi hai?' — If customer says bilkul band/nahi chal rahi/khadi hai → set machine_status to 'Breakdown'. If customer says chal rahi hai/problem ke saath → set machine_status to 'Running With Problem'.";
-    else if (!d.city || !d.city_id) nextQuestion = "Ask which city/shahar they are in; confirm nearest Rajesh Motors service center if needed.";
-    else if (!fields.customer_phone) nextQuestion = "Ask for their 10-digit mobile number.";
-    else nextQuestion = "All data collected. Ask final confirmation once, then submit.";
-
-    // Build conversation context for better reasoning
-    const conversationHistory = callData.messages.slice(-6).map(m => 
-        `${m.role === 'user' ? 'Customer' : 'Agent'}: ${m.text}`
-    ).join('\n');
-
-    const lastUserMessage = callData.messages.filter(m => m.role === 'user').slice(-1)[0]?.text || '';
-    const turnNumber = callData.turnCount || 0;
-    const machineAttempts = callData.machineNumberAttempts || 0;
-
     return `You are Priya — a warm, intelligent, fast-speaking female service agent at Rajesh Motors JCB service center.
 
-=== CALL CONTEXT ===
-Turn: ${turnNumber}
-Customer Status: ${customer}
-Machine Number Attempts: ${machineAttempts}/3
-Collected Data: ${have.length ? have.join(" | ") : "nothing yet"}
-Still Need: ${need.join(", ") || "NOTHING — ready to confirm"}
-Next Action: ${nextQuestion}
+Collected Data: ${Object.entries(d).filter(([k, v]) => v && !k.startsWith('_')).map(([k, v]) => `${k}=${v}`).join(' | ') || 'nothing yet'}
 
-=== RECENT CONVERSATION ===
-${conversationHistory || 'Call just started'}
+RULES:
+1. Reply in Hindi, naturally and warm
+2. Keep replies SHORT — max 12 words
+3. Answer side questions BRIEFLY, then ask the next required data point
+4. Extract: machine_no (4-7 digits), complaint_title, machine_status (Breakdown or Running With Problem), city, customer_phone (10 digits)
+5. After ALL data: ask "Theek hai, aur koi problem? Save kar dun?"
 
-Last Customer Input: "${lastUserMessage}"
+Current Status: ${!d.machine_no ? "Need machine number" : !d.complaint_title ? "Need complaint description" : !d.machine_status ? "Ask: Machine band hai ya problem ke saath chal rahi hai?" : !d.city ? `Need city from: ${cityList}` : !d.customer_phone ? "Need 10-digit phone" : "Ready to save — ask final confirmation"}
 
-=== YOUR ROLE & INTELLIGENCE ===
-You are an AI agent with LOGICAL REASONING and CONTEXTUAL UNDERSTANDING.
-
-1. **Context Awareness**: Remember what was just discussed. If customer is mid-sentence or continuing a thought, don't interrupt with unrelated questions.
-
-2. **Logical Flow**: 
-   - If customer is explaining a problem, let them finish before asking next question
-   - If customer asks a question, answer it FIRST, then continue with data collection
-   - If customer says "ek minute" or "ruko", acknowledge and wait patiently
-   - If customer is confused, explain clearly what you need and WHY
-
-3. **Smart Inference**:
-   - If customer says "machine band hai" → infer machine_status = "Breakdown" AND complaint_title likely relates to "not starting"
-   - If customer mentions location/city in passing, capture it even if not directly asked
-   - If customer gives multiple problems in one breath, capture ALL of them
-   - If customer says "same problem as before", acknowledge and ask them to describe it briefly
-
-4. **Natural Conversation**:
-   - Don't sound robotic or repetitive
-   - Use varied language - not the same phrases every time
-   - Show empathy: "Samajh gaya ji" / "Theek hai, main note kar raha hun"
-   - Be patient with rural customers who may take time to find documents
-
-5. **Question Handling - ALWAYS COMBINE ANSWER + NEXT QUESTION**:
-   - If customer asks "kitna time lagega?" → Answer: "Engineer jaldi call karega. Machine number bataiye?"
-   - If customer asks "kya karna padega?" → Explain: "Complaint register karenge. Machine number bataiye?"
-   - If customer asks "aap kaun?" → "Main Priya, Rajesh Motors se. Machine number bataiye?"
-   - If customer asks about cost/price → "Engineer dekhega. Pehle machine number bataiye?"
-   - **RULE: NEVER answer a side question and stop. ALWAYS add the next required question immediately.**
-
-6. **Error Recovery**:
-   - If you asked for machine number and customer gave complaint instead, acknowledge the complaint FIRST: "Theek hai ji, [complaint] note kar liya. Machine number bhi bata dijiye."
-   - If customer is confused about what to say, give examples: "Jaise: engine start nahi, ya gear problem, ya hydraulic slow"
-   - If customer gives wrong format, guide gently: "Machine number 4 se 7 digit ka hota hai ji"
-
-=== LANGUAGE RULES ===
-Understand Hindi, English, Rajasthani, Marwari naturally.
-Reply in Hindi. NEVER use "ji" - speak naturally without honorifics.
-Keep replies SHORT — max 12-15 words unless explaining something complex.
-Warm, human, not robotic.
-
-CUSTOMER STATUS: ${customer}
-COLLECTED: ${have.length ? have.join(" | ") : "nothing yet"}
-STILL NEED: ${need.join(", ") || "NOTHING — ready to confirm"}
-NEXT ACTION: ${nextQuestion}
-
-YOUR ONLY JOB: Collect a JCB complaint. Ask ONE question at a time. Stay focused.
-If all required fields are collected and the customer asks a direct question, answer it briefly and then submit the complaint or confirm only once.
-Do not repeat the same final confirmation prompt twice.
-Do not use canned reply templates or hardcoded phrases. Always generate natural Hindi responses that fit the customer’s exact question.
-
-=== LANGUAGE RULES ===
-Understand Hindi, English, Rajasthani, Marwari naturally.
-Reply in Hindi. NEVER use "ji" - speak naturally without honorifics.
-Keep replies SHORT — max 12-15 words. Warm, human, not robotic.
-
-=== RAJASTHANI / MARWARI UNDERSTANDING ===
-- "band padi / khadi padi / chal nahi ryi / chaalti nai" → machine is in Breakdown
-- "tel nikal ryo / rissa / risso" → Oil Leakage
-- "dhak gyi / zyada garam / tapt gyi" → Engine Overheating
-- "filttar / filtar badlana / seva karwani" → Service/Filter Change
-- "race nai / ras nai / gas nai leti" → Accelerator Problem
-- "khatak / khatakhat / aavaaz aa ri / thokata" → Abnormal Noise
-- "hydraulik / ailak / bucket nai uthta" → Hydraulic System Failure
-- "thanda nai / AC kharab" → AC Not Working
-- "brake nai lagta / rokti nai" → Brake Failure
-- "bijli nai / light nai / battery down" → Electrical Problem
-
-=== MULTI-COMPLAINT RULE ===
-Customer may say many problems in one breath. Capture ALL of them:
-- complaint_title = FIRST/PRIMARY problem
-- complaint_details = ALL problems semicolon-separated (include the first too)
-- NEVER discard any problem mentioned. Keep accumulating.
-- Example: "engine start nahi, tel nikal raha, AC nahi, brake kharab"
-  → title: "Engine Not Starting"
-  → details: "Engine Not Starting; Oil Leakage; AC Not Working; Brake Failure"
-
-=== CONVERSATION FLOW ===
-1. **SIDE QUESTIONS (CRITICAL)**: If customer asks a side question (like "Who are you?", "How long will engineer take?", "Is my complaint registered?", "What's your name?", "How much will it cost?"), you MUST:
-   - Answer the side question VERY BRIEFLY (1-3 words max)
-   - IMMEDIATELY follow with the NEXT REQUIRED QUESTION in the SAME response
-   - Do NOT wait for another turn
-   - Example: Customer: "Who are you?" → Agent: "Main Priya. Machine number bataiye?"
-   - Example: Customer: "How long will engineer take?" → Agent: "Jaldi aayega. Aapka phone number kya hai?"
-   - Example: Customer: "Is my complaint registered?" → Agent: "Haan, register kar rahe hain. Aur koi problem toh nahi?"
-   - This keeps conversation flowing naturally without breaks or repetition
-
-2. If customer says "ek minute / ruko / dhundh raha" → say "Theek hai." and wait
-3. If machine number not provided → simply ask: "Machine number bataiye"
-4. After complaint collected, ask machine status: "Machine bilkul band hai ya problem ke saath chal rahi hai?"
-4.1 If all required fields are already collected and customer asks a direct question, answer it briefly and then proceed to register the complaint.
-   - If bilkul band / nahi chal rahi / khadi hai → machine_status = "Breakdown"
-   - If chal rahi hai / problem ke saath → machine_status = "Running With Problem"
-5. After ALL fields collected → ask: "Theek hai, aur koi problem toh nahi? Save kar dun?"
-6. If customer says haan/yes/theek → set ready_to_submit: true
-
-=== VALIDATION ===
-- NEVER set ready_to_submit:true if machine_no is empty
-- NEVER set ready_to_submit:true if any required field is missing
-- Only set ready_to_submit:true after customer confirms "save kar do" or "haan theek hai"
-
-VALID CITIES: ${cityList}
-
-OUTPUT FORMAT — always end response with ### and JSON:
-[your warm short reply] ### {"extracted":{"machine_no":"","complaint_title":"","machine_status":"","city":"","customer_phone":"","complaint_details":"","job_location":"","machine_location_address":""},"ready_to_submit":false}
-
-CRITICAL: Stay on track. Answer side questions briefly then ALWAYS return to the NEXT ACTION above.
-
-=== SIDE QUESTION HANDLING (CRITICAL - READ THIS) ===
-When customer asks a side question, you MUST combine your answer with the next required question:
-- WRONG: "Main Priya, Rajesh Motors se." [stops]
-- RIGHT: "Main Priya, Rajesh Motors se. Machine number bataiye?"
-
-- WRONG: "Engineer jaldi aayega." [stops]
-- RIGHT: "Engineer jaldi aayega. Aapka phone number kya hai?"
-
-- WRONG: "Haan, complaint register kar rahe hain." [stops]
-- RIGHT: "Haan, complaint register kar rahe hain. Aur koi problem toh nahi?"
-
-ALWAYS include the next required question in the SAME response. This prevents conversation breaks and keeps the flow natural.
-
-=== IMPORTANT ===
-If you don't have information about something (pricing, warranty details, engineer timing, etc.), say:
-"Yeh detail mujhe available nahi hai. Aur information ke liye Rajesh Motors office se contact karein ya engineer ko call karein."
-NEVER make up information. If unsure, admit you don't know.`;
+OUTPUT FORMAT (end every response with this):
+[your reply] ### {"extracted":{"machine_no":"${d.machine_no || ''}","complaint_title":"${d.complaint_title || ''}","machine_status":"${d.machine_status || ''}","city":"${d.city || ''}","customer_phone":"${d.customer_phone || ''}","complaint_details":"${d.complaint_details || ''}"},"ready_to_submit":false}`;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -300,36 +108,36 @@ NEVER make up information. If unsure, admit you don't know.`;
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function calculateCost(tokens, service) {
     const pricing = {
-        'azure-openai': 0.0001, // $0.0001 per 1K tokens (rough estimate)
-        'groq': 0.00005,        // $0.00005 per 1K tokens
-        'ollama': 0,            // Free local
-        'openai': 0.0001        // $0.0001 per 1K tokens
+        'azure-openai': 0.0001,
+        'groq': 0.00005,
+        'ollama': 0,
+        'openai': 0.0001
     };
     
     const pricePerToken = pricing[service] || 0;
     const costUSD = (tokens / 1000) * pricePerToken;
-    const costINR = costUSD * 83; // Rough USD to INR conversion
+    const costINR = costUSD * 83;
     
     return costINR;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🧠 AI-POWERED ENTITY EXTRACTION
+   🎯 NORMALIZE EXTRACTED VALUE
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function normalizeExtractedValue(value) {
-    if (value == null) return null;
-    if (typeof value !== 'string') return value;
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    if (/^(not collected|not found|unknown|na|n\/a|none|empty)$/i.test(trimmed)) return null;
-    return trimmed;
+function normalizeExtractedValue(v) {
+    if (!v || v === null || v === undefined) return null;
+    const s = String(v).trim();
+    if (!s || /^(null|undefined|na|n\/a|unknown|none|empty|not collected)$/i.test(s)) return null;
+    return s;
 }
 
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   📝 ENTITY EXTRACTION
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export async function extractEntities(userInput, callData) {
     const startTime = Date.now();
     
     try {
-        // Build minimal extraction prompt
         const extractionPrompt = `Extract entities from this user input for a JCB complaint system.
 
 User Input: "${userInput}"
@@ -384,10 +192,8 @@ Rules:
             return { intent: 'provide_info', entities: {} };
         }
 
-        // Parse JSON response
         let parsed;
         try {
-            // Remove any markdown formatting
             const cleanJson = raw.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
             parsed = JSON.parse(cleanJson);
         } catch (e) {
@@ -430,7 +236,6 @@ export async function getSmartAIResponse(callData) {
     try {
         callData.extractedData = sanitizeExtractedData(callData.extractedData);
 
-        // Fast regex pass first
         const lastUserMsg = callData.messages.filter(m => m.role === "user").pop()?.text || "";
         if (lastUserMsg) {
             const rxData = extractAllData(lastUserMsg, callData.extractedData);
@@ -439,7 +244,6 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // City match
         if (callData.extractedData.city && !callData.extractedData.city_id) {
             const mc = matchServiceCenter(callData.extractedData.city);
             if (mc) {
@@ -452,7 +256,6 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // Build system prompt
         const systemPrompt = buildSystemPrompt(callData);
         prompt = systemPrompt;
 
@@ -480,7 +283,6 @@ export async function getSmartAIResponse(callData) {
 
         response = raw;
 
-        // Parse response
         const sepIdx = raw.indexOf("###");
         let replyText = sepIdx !== -1 ? raw.slice(0, sepIdx).trim() : raw.trim();
         let extractedJSON = {};
@@ -498,7 +300,6 @@ export async function getSmartAIResponse(callData) {
             } catch { /* ignore */ }
         }
 
-        // Merge extracted data
         const merged = { ...callData.extractedData };
         for (const [k, v] of Object.entries(extractedJSON)) {
             const cleanValue = normalizeExtractedValue(v);
@@ -519,7 +320,6 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // City match again after AI
         if (merged.city && !merged.city_id) {
             const mc = matchServiceCenter(merged.city);
             if (mc) {
@@ -532,10 +332,8 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // Clean reply
         replyText = replyText.replace(/```[\s\S]*?```/g, "").replace(/###[\s\S]*/g, "").trim();
 
-        // Validate before marking ready
         if (readyToSubmit) {
             const v = validateExtracted(merged);
             if (!v.valid) { 
@@ -548,7 +346,6 @@ export async function getSmartAIResponse(callData) {
         const tokens = resp.usage?.total_tokens || 0;
         const cost = calculateCost(tokens, 'azure-openai');
 
-        // Log successful LLM usage
         const callSid = callData?.CallSid || callData?.callSid || null;
         serviceLogger.logLLM(
             callSid,
@@ -571,7 +368,6 @@ export async function getSmartAIResponse(callData) {
         error = err.message;
         const latency = Date.now() - startTime;
         
-        // Log failed LLM usage
         serviceLogger.logLLM(
             callData.callSid,
             service,
@@ -613,16 +409,13 @@ export function extractAllData(text, cur = {}) {
     }
     const lo = normalizedText.toLowerCase().replace(/[।\.\!\?]/g, " ").replace(/\s+/g, " ").trim();
 
-    // Skip hold phrases
     if (/^(ek minute|ek second|ruko|ruk|dhundh|dekh raha|hold on|thoda|leke aata|bas|ok|haan|ha|acha|achha)\s*$/i.test(lo)) return {};
 
-    // ── Machine number (4-7 digits) ──────────────────────────────
+    // Machine number (4-7 digits)
     if (!cur.machine_no) {
-        // Remove any phone-like 10-digit sequences before searching for a chassis number.
         const phoneLike = text.replace(/(?:[6-9][\s\-\.,]*){10,}/g, '');
         const noPhone = phoneLike.replace(/[6-9]\d{9}/g, '');
 
-        // Prefer explicit labels like chassis/machine/serial number.
         const labelRx = /(chassis|machine|serial|s\.no|s no|machine no|chassis no|serial no|सीरियल|चेसिस|मशीन)\s*(?:number|no|n\.?|नं(?:\.?)|नंबर)?[\s:\-]*([0-9][0-9\-\s]{3,20})/i;
         const explicitMatch = text.match(labelRx);
         if (explicitMatch) {
@@ -646,7 +439,7 @@ export function extractAllData(text, cur = {}) {
         }
     }
 
-    // ── Phone (10 digit Indian) ───────────────────────────────────
+    // Phone (10 digit Indian)
     if (!cur.customer_phone || !/^[6-9]\d{9}$/.test(cur.customer_phone)) {
         const compact = text.replace(/[\s\-\.,।]/g, "");
         const nums = compact.match(/\d+/g) || [];
@@ -661,7 +454,6 @@ export function extractAllData(text, cur = {}) {
         }
 
         if (!ex.customer_phone) {
-            // Try to extract phone from phrases like "my number is..." with spaced digits.
             const phoneLabelRx = /(?:mobile|phone|number|nambar|नंबर|फोन)\s*(?:is|hai|no|n\.?|nambar)?\s*([0-9\s\-]{10,25})/i;
             const phoneMatch = text.match(phoneLabelRx);
             if (phoneMatch) {
@@ -671,7 +463,7 @@ export function extractAllData(text, cur = {}) {
         }
     }
 
-    // ── City (Devanagari + English + Rajasthani variants) ─────────
+    // City
     if (!cur.city) {
         const DEVA_MAP = {
             "भीलवाड़ा": "BHILWARA", "बड़ी": "BHILWARA", "जयपुर": "JAIPUR", "अजमेर": "AJMER",
@@ -680,15 +472,6 @@ export function extractAllData(text, cur = {}) {
             "टोंक": "TONK", "झुंझुनू": "JHUNJHUNU", "दौसा": "DAUSA",
             "नागौर": "NAGAUR", "पाली": "PALI", "बाड़मेर": "BARMER",
             "जैसलमेर": "JAISALMER", "चित्तौड़गढ़": "CHITTORGARH", "बूंदी": "BUNDI",
-            "बारां": "BARAN", "झालावाड़": "JHALAWAR", "राजसमंद": "RAJSAMAND",
-            "भरतपुर": "BHARATPUR", "धौलपुर": "DHOLPUR", "करौली": "KARAULI",
-            "सवाई माधोपुर": "SAWAI MADHOPUR", "डूंगरपुर": "DUNGARPUR",
-            "बांसवाड़ा": "BANSWARA", "प्रतापगढ़": "PRATAPGARH", "सिरोही": "SIROHI",
-            "जालोर": "JALOR", "नीम का थाना": "NEEM KA THANA", "चुरू": "CHURU",
-            "हनुमानगढ़": "HANUMANGARH", "गंगानगर": "GANGANAGAR",
-            "श्रीगंगानगर": "GANGANAGAR", "निम्बाहेड़ा": "NIMBAHERA",
-            "सुजानगढ़": "SUJANGARH", "कोटपूतली": "KOTPUTLI", "भिवाड़ी": "BHIWADI",
-            "रामगंज मंडी": "RAMGANJMANDI", "रामगंज": "RAMGANJMANDI",
         };
         for (const [d, l] of Object.entries(DEVA_MAP)) {
             if (text.includes(d)) { ex.city = l; break; }
@@ -701,7 +484,7 @@ export function extractAllData(text, cur = {}) {
         }
     }
 
-    // ── Machine status (with Rajasthani) ─────────────────────────
+    // Machine status
     if (!cur.machine_status) {
         const bkRx = /(band|khadi|khari|stop|ruk gayi|breakdown|बंद|खड़ी|chalu nahi|chalti nahi|start nahi|start nhi|nahi chal|padi hai|band padi|chal nhi rahi|chal nhi|nhi chal|nahi chalti|band padi hai|khadi padi|chal nai ryi|chaalti nai|chal nai)/;
         const rwRx = /(chal rahi|chal rhi|running|chalu hai|dikkat|problem|चल रही|चालू है|chal ryi|chaalti hai)/;
@@ -711,13 +494,7 @@ export function extractAllData(text, cur = {}) {
         else if (rwRx.test(lo) || rwRx.test(text)) ex.machine_status = "Running With Problem";
     }
 
-    // ── Job location ──────────────────────────────────────────────
-    if (!cur.job_location) {
-        if (/(workshop|garage|वर्कशॉप|गैराज)/.test(lo)) ex.job_location = "Workshop";
-        else if (/(site|field|bahar|khet|sadak|onsite|साइट|खेत)/.test(lo)) ex.job_location = "Onsite";
-    }
-
-    // ── Complaint title (with Rajasthani variants) ────────────────
+    // Complaint title
     if (!cur.complaint_title) {
         const mCtx = /(machine|jcb|start|chalu|engine|मशीन|इंजन)/.test(lo);
         const ns = /(start nahi|start nhi|chalu nahi|chalu nhi|chalti nahi|chal nahi rahi|nahi chal rahi|चालू नहीं|स्टार्ट नहीं|नहीं चल|chal nai|start nai ho|chaalti nai)/.test(lo);
@@ -759,14 +536,6 @@ export function matchServiceCenter(cityText) {
         "JAYPUR": "JAIPUR", "JYPUR": "JAIPUR", "VKI": "VKIA",
         "ABU": "ABU ROAD", "SWARUP": "SWARUPGANJ", "NEEM": "NEEM KA THANA",
         "BADHI": "BHILWARA", "BADI": "BHILWARA", "BHIL": "BHILWARA",
-        "JHUNJ": "JHUNJHUNU", "RAMGANJ": "RAMGANJMANDI", "SAWAI": "SAWAI MADHOPUR",
-        "GANGANA": "GANGANAGAR", "HANUMAN": "HANUMANGARH", "CHITT": "CHITTORGARH",
-        "PRATAP": "PRATAPGARH", "BANSWA": "BANSWARA", "RAJSAM": "RAJSAMAND",
-        "NIMBA": "NIMBAHERA", "KARAUL": "KARAULI", "KOTPUT": "KOTPUTLI",
-        "SUJAN": "SUJANGARH", "DHOLP": "DHOLPUR", "DUNGAR": "DUNGARPUR",
-        "JHALA": "JHALAWAR", "BARME": "BARMER", "JAISAL": "JAISALMER",
-        "UDAI": "UDAIPUR", "ODAI": "UDAIPUR", "BYKAN": "BIKANER",
-        "SONG": "TONK", "MAVAL": "MAWAL",
     };
     for (const [w, c] of Object.entries(PARTIAL_MAP)) {
         if (inp.includes(w)) return SERVICE_CENTERS.find(sc => sc.city_name === c) || null;
