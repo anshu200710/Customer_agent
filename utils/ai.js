@@ -84,23 +84,46 @@ export const SERVICE_CENTERS = [
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function buildSystemPrompt(callData) {
     const d = callData.extractedData;
+    const intent = callData.intent || 'unknown';
     const cityList = SERVICE_CENTERS.map(c => c.city_name).join(', ');
     
     return `You are Priya — a warm, intelligent, fast-speaking female service agent at Rajesh Motors JCB service center.
 
 Collected Data: ${Object.entries(d).filter(([k, v]) => v && !k.startsWith('_')).map(([k, v]) => `${k}=${v}`).join(' | ') || 'nothing yet'}
+User Intent: ${intent}
 
 RULES:
 1. Reply in Hindi, naturally and warm
 2. Keep replies SHORT — max 12 words
-3. Answer side questions BRIEFLY, then ask the next required data point
-4. Extract: machine_no (4-7 digits), complaint_title, machine_status (Breakdown or Running With Problem), city, customer_phone (10 digits)
-5. After ALL data: ask "Theek hai, aur koi problem? Save kar dun?"
+3. Ask only for the next missing required field
+4. Do not answer general questions or side topics here
+5. Extract: machine_no (4-7 digits), complaint_title, machine_status (Breakdown or Running With Problem), city, customer_phone (10 digits)
+6. After ALL data: ask "Theek hai, aur koi problem? Save kar dun?"
 
 Current Status: ${!d.machine_no ? "Need machine number" : !d.complaint_title ? "Need complaint description" : !d.machine_status ? "Ask: Machine band hai ya problem ke saath chal rahi hai?" : !d.city ? `Need city from: ${cityList}` : !d.customer_phone ? "Need 10-digit phone" : "Ready to save — ask final confirmation"}
 
 OUTPUT FORMAT (end every response with this):
 [your reply] ### {"extracted":{"machine_no":"${d.machine_no || ''}","complaint_title":"${d.complaint_title || ''}","machine_status":"${d.machine_status || ''}","city":"${d.city || ''}","customer_phone":"${d.customer_phone || ''}","complaint_details":"${d.complaint_details || ''}"},"ready_to_submit":false}`;
+}
+
+export async function getAIResponse(promptText) {
+    try {
+        const resp = await client.chat.completions.create({
+            model: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o-mini",
+            messages: [
+                { role: "system", content: "You are a helpful JCB service agent. Answer clearly in Hinglish." },
+                { role: "user", content: promptText }
+            ],
+            temperature: 0.6,
+            max_tokens: 120,
+            top_p: 0.9,
+        });
+
+        return resp.choices?.[0]?.message?.content?.trim() || "Ji, thoda aur bataiye.";
+    } catch (err) {
+        console.error("❌ [AI RESPONSE]", err.message);
+        return "Ji, machine number bataiye.";
+    }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -126,8 +149,19 @@ function calculateCost(tokens, service) {
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function normalizeExtractedValue(v) {
     if (!v || v === null || v === undefined) return null;
-    const s = String(v).trim();
+    let s = String(v).trim();
     if (!s || /^(null|undefined|na|n\/a|unknown|none|empty|not collected)$/i.test(s)) return null;
+
+    // Collapse spelled-out letters like "P R A J A P A T I" to "PRAJAPATI"
+    if (/^([A-Za-z]\s+){2,}[A-Za-z]$/.test(s)) {
+        s = s.replace(/\s+/g, "");
+    }
+
+    // Normalize full uppercase names and city values to title case
+    if (/^[A-Z\s]+$/.test(s) && s.length > 1 && !/\b(JCB|AI|TTS|URL|HTTP|API)\b/.test(s)) {
+        s = s.toLowerCase().split(/\s+/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+    }
+
     return s;
 }
 
@@ -147,6 +181,7 @@ Current Context:
 - Complaint: ${callData.extractedData.complaint_title || 'not collected'}
 - City: ${callData.extractedData.city || 'not collected'}
 - Phone: ${callData.extractedData.customer_phone || 'not collected'}
+- Customer Name: ${callData.extractedData.customer_name || 'not collected'}
 
 Classify the user's INTENT and extract ENTITIES. Return ONLY valid JSON:
 
@@ -155,6 +190,7 @@ Classify the user's INTENT and extract ENTITIES. Return ONLY valid JSON:
   "confirm_type": "yes" | "no" | null,
   "entities": {
     "machine_no": "1234567" | null,
+    "customer_name": "Rajesh Prajapati" | null,
     "complaint_title": "Engine Not Starting" | null,
     "machine_status": "Breakdown" | "Running With Problem" | null,
     "city": "JAIPUR" | null,
@@ -463,6 +499,15 @@ export function extractAllData(text, cur = {}) {
         }
     }
 
+    // Customer name
+    if (!cur.customer_name) {
+        const nameRx = /(?:\b(?:mera naam hai|mera naam|name is|naam hai|main hu|main hoon|main hun|mai hu|mai hoon)\b[:\- ]*)\s*([A-Za-z\u0900-\u097F][A-Za-z\u0900-\u097F\s]{2,50})/i;
+        const nameMatch = text.match(nameRx);
+        if (nameMatch) {
+            ex.customer_name = normalizeExtractedValue(nameMatch[1]);
+        }
+    }
+
     // City
     if (!cur.city) {
         const DEVA_MAP = {
@@ -474,12 +519,14 @@ export function extractAllData(text, cur = {}) {
             "जैसलमेर": "JAISALMER", "चित्तौड़गढ़": "CHITTORGARH", "बूंदी": "BUNDI",
         };
         for (const [d, l] of Object.entries(DEVA_MAP)) {
-            if (text.includes(d)) { ex.city = l; break; }
+            if (text.includes(d) || lo.includes(d.toLowerCase())) { ex.city = l; break; }
         }
         if (!ex.city) {
             const sorted = [...SERVICE_CENTERS].sort((a, b) => b.city_name.length - a.city_name.length);
             for (const c of sorted) {
-                if (lo.includes(c.city_name.toLowerCase())) { ex.city = c.city_name; break; }
+                const cityName = c.city_name.toLowerCase();
+                const branchName = c.branch_name.toLowerCase();
+                if (lo.includes(cityName) || lo.includes(branchName)) { ex.city = c.city_name; break; }
             }
         }
     }
@@ -566,6 +613,7 @@ function validateExtracted(data) {
 
 export function sanitizeExtractedData(data) {
     const c = { ...data };
+    if (c.customer_name) c.customer_name = normalizeExtractedValue(c.customer_name);
     if (c.customer_phone) c.customer_phone = normalizeExtractedValue(c.customer_phone);
     if (c.machine_no) c.machine_no = normalizeExtractedValue(c.machine_no);
     if (c.complaint_title) c.complaint_title = normalizeExtractedValue(c.complaint_title);

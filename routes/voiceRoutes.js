@@ -1,7 +1,7 @@
 import express from "express";
 import twilio from "twilio";
 import axios from "axios";
-import { getSmartAIResponse, extractEntities, extractAllData, sanitizeExtractedData, matchServiceCenter } from "../utils/ai.js";
+import { getSmartAIResponse, getAIResponse, extractEntities, extractAllData, sanitizeExtractedData, matchServiceCenter } from "../utils/ai.js";
 import { searchFAQ, getAgentInfo, getUnavailableMessage } from "../utils/faq.js";
 import { generateSpeech, detectEmotionAndContext, formatNumbersForTTS } from "../utils/cartesia_tts.js";
 import serviceLogger from "../utils/service_logger.js";
@@ -31,14 +31,15 @@ function missingField(d) {
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    📋 SMART SILENCE HANDLER: Context-aware prompts based on what's missing
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-function getSmartSilencePrompt(callData) {
+function getSmartSilencePrompt(callData, options = {}) {
     const d = callData.extractedData;
+    const { ignoreLastQuestion = false } = options;
     
     // Check what's missing and ask for it specifically
     const missing = missingField(d);
     
-    // If we have a stored last question, use it
-    if (callData.lastQuestion) {
+    // If we have a stored last question, use it only when we explicitly want to repeat the previous prompt
+    if (callData.lastQuestion && !ignoreLastQuestion) {
         return callData.lastQuestion;
     }
     
@@ -130,7 +131,7 @@ function parsePhoneFromText(text) {
 
 function isPositiveConfirmation(text) {
     // English + Transliterated + Devanagari script variants
-    return /(\b(haan|ha|han|theek hai|thik hai|save|kar do|register|done|yes|bilkul|sahi hai|ok|okay|theek|chalo|hmm|yahi|rakh|rakhna|karna|yehi)\b|हां|हा|ठीक|यही|रख|कर|बिलकुल|ठीक है)/i.test(text);
+    return /(\b(haan|ha|han|theek hai|thik hai|save|kar do|register|done|yes|bilkul|sahi hai|ok|okay|theek|chalo|hmm|yahi|yehi|yehi hai|ha|rakhna|yehi rakhna|yehi rakh|rakh|karna)\b|हां|हा|ठीक|ठीक है|यही|येही|येही है|रख|कर|बिलकुल)/i.test(text);
 }
 
 function isNegativeConfirmation(text) {
@@ -153,50 +154,71 @@ function isClarificationQuestion(text) {
         && !isAddMoreProblem(text);
 }
 
-function answerSideQuestion(text, callData) {
+async function answerSideQuestion(text, callData) {
     const lo = text.toLowerCase();
-    
-    // AGENT NAME: Only match direct questions about agent name, not "city name" or "machine name"
-    if (/(aapka naam|tumhara naam|main kaun|kaun bol raha|tum kaun|aap kaun|aap kaunsi|agent kaun|priya kaun)/.test(lo)) {
-        return "Main Priya, Rajesh Motors se.";
+    const isSide = callData.intent === 'side_question' || isClarificationQuestion(text);
+    if (!isSide) return null;
+
+    const prompt = `Customer asked: "${text}"
+
+You are a helpful JCB service agent.
+
+Rules:
+- Answer clearly in Hinglish
+- Keep it short (1-2 lines)
+- If needed, guide user back to the complaint process
+
+Context:
+- Machine number: ${callData.extractedData.machine_no || "not provided"}
+
+Example:
+Q: "कितना में देखने वाली?"
+A: "Inspection free hota hai 🙂 Machine number bata dijiye."
+
+Now answer:`;
+
+    const aiAnswer = await getAIResponse(prompt);
+    if (aiAnswer) return aiAnswer;
+
+    if (/नाम|तुम्हारा नाम|आप कौन|आप कौन सी/i.test(lo)) {
+        return 'Main Priya hoon, Rajesh Motors se. Machine number bataiye.';
     }
-    
-    // COMPLAINT REGISTRATION: Only if NOT already collecting data
-    if (/(complaint register|complaint kaise|register kaise|complaint process|complaint karna hai)/.test(lo) && !/(kab|kahan|kaise|kitna|details)/.test(lo)) {
-        // Check if we already have machine number
-        if (callData.extractedData.machine_no) {
-            return "Haan, complaint register kar rahe hain. Aur details collect kar rahe hain.";
-        } else {
-            return "Haan, complaint register karte hain. Pehle machine number bataiye.";
-        }
+    if (/क्यों|क्यों चाहिए|इसी नंबर|same number|वही नंबर/i.test(lo)) {
+        return 'Ji, wahi number use karein. Machine number bataiye.';
     }
-    
-    // ENGINEER TIMING: Only if asking about engineer arrival
-    if (/engineer/.test(lo) && /(kab|kabhi|aayega|aaega|kab aayega|aayegi|kitna time|der)/.test(lo)) {
-        return "Engineer jaldi call karega.";
+    if (/कितना|किराया|price|charge|cost|दर|रु[p₹]/i.test(lo)) {
+        return 'Service cost machine par nirbhar karegi. Machine number bataiye.';
     }
-    
-    // PHONE NUMBER CHANGE: Only if explicitly asking to change
-    if (/(phone.*change|number.*change|naya number|dusra number|badalna hai)/.test(lo)) {
-        return "Haan, naya number bataiye.";
+    if (/wait|इंतजार|रुको|hold on|thoda ruk/i.test(lo)) {
+        return 'Thoda ruk jaiye. Machine number bataiye.';
     }
-    
-    // PHONE/NUMBER QUESTIONS: Only if asking what phone is for
-    if (/(phone.*kya|number.*kya|phone.*kyun|number.*kyun)/.test(lo)) {
-        return "Service call hai, complaint register kar rahi hun.";
+    if (/कब|kab|jab|when|time|समय/i.test(lo)) {
+        return 'Engineer jaldi aayega. Ab machine number bataiye.';
     }
-    
-    // WAIT TIME: Only if asking about wait time
-    if (/(kitna der|der|wait|time|kab tak|kitna time)/.test(lo) && /(engineer|call|aayega)/.test(lo)) {
-        return "Jaldi engineer call karega.";
-    }
-    
-    // WHAT ARE YOU DOING: Only if asking what agent is doing
-    if (/(kya.*kar.*rahi|kya.*ho.*raha|kaise.*hoga|kaisa.*hai|kaise.*honge)/.test(lo) && /(aap|tum|main)/.test(lo)) {
-        return "Complaint note kar rahi hun.";
-    }
-    
+
     return null;
+}
+
+function titleCaseWord(word) {
+    if (!word) return word;
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
+
+function normalizeSpeechText(text) {
+    if (!text) return text;
+    let normalized = String(text).trim();
+
+    // Collapse spelled-out letter sequences like "P R A J A P A T I" -> "PRAJAPATI"
+    normalized = normalized.replace(/\b([A-Za-z])(?:[\s,]+([A-Za-z])){2,}\b/g, match => match.replace(/[\s,]+/g, ""));
+
+    // Convert full uppercase words to title case, preserving known acronyms
+    normalized = normalized.replace(/\b([A-Z]{2,})\b/g, match => {
+        const preserve = new Set(["JCB", "AI", "TTS", "URL", "HTTP", "API"]);
+        if (preserve.has(match)) return match;
+        return match.split(" ").map(titleCaseWord).join(" ");
+    });
+
+    return normalized;
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -220,7 +242,8 @@ async function speak(twiml, text, options = {}) {
     
     try {
         // Format numbers for better pronunciation
-        const formattedText = formatNumbersForTTS(text);
+        const numbersFormattedText = formatNumbersForTTS(text);
+        const formattedText = normalizeSpeechText(numbersFormattedText);
         
         // Detect emotion and context automatically
         const { emotion, context } = detectEmotionAndContext(formattedText);
@@ -585,8 +608,12 @@ router.post("/", async (req, res) => {
 
         activeCalls.set(CallSid, callData);
 
-        const greeting = callData.customerData
-            ? `Namaste ${callData.customerData.name.split(" ")[0]}, kya problem hai?`
+        const knownName = callData.customerData?.name || callData.extractedData.customer_name || null;
+        const greetingName = knownName
+            ? normalizeSpeechText(knownName.split(" ")[0])
+            : null;
+        const greeting = greetingName
+            ? `Namaste ${greetingName}, kya problem hai?`
             : "Namaste, Rajesh Motors. Machine number bataiye.";
 
         callData.lastQuestion = greeting;  // Track the question
@@ -639,6 +666,10 @@ router.post("/process", async (req, res) => {
             twiml.hangup();
             return res.type("text/xml").send(twiml.toString());
         }
+
+        // Ensure callSid is available on session data
+        callData.callSid = CallSid;
+        callData.CallSid = CallSid;
 
         // Start turn timing
         const turnStartTime = performanceLogger.getHighResTime();
@@ -785,6 +816,21 @@ router.post("/process", async (req, res) => {
                     callData.extractedData[k] = v;
                     console.log(`   🧠 AI extracted ${k}: "${v}"`);
                 }
+            }
+        }
+
+        if (callData.intent === 'side_question' || callData.intent === 'ask_clarification') {
+            const answer = await answerSideQuestion(userInput, callData);
+            if (answer) {
+                console.log(`   💡 Side question early handled with AI answer`);
+                callData.lastQuestion = null;
+                const nextPrompt = getSmartSilencePrompt(callData, { ignoreLastQuestion: true });
+                const responseText = `${answer} ${nextPrompt}`.trim();
+                callData.lastQuestion = responseText;
+                callData.messages.push({ role: 'assistant', text: responseText, timestamp: new Date() });
+                activeCalls.set(CallSid, callData);
+                await speak(twiml, responseText, { emotion: 'professional', callSid: CallSid });
+                return res.type('text/xml').send(twiml.toString());
             }
         }
 
@@ -973,7 +1019,9 @@ router.post("/process", async (req, res) => {
             const lastTwo = ph.slice(-2);
             callData.pendingPhoneConfirm = false;
             callData.awaitingPhoneConfirm = true;
-            const prompt = `${callData.customerData.name.split(" ")[0]}, kya aapka yehi number save karna hai jisme last mein ${lastTwo} aata hai, ya change karna hai?`;
+            const nameCandidate = callData.customerData?.name || callData.extractedData.customer_name || "";
+            const promptName = nameCandidate ? normalizeSpeechText(nameCandidate.split(" ")[0]) : "Ji";
+            const prompt = `${promptName}, kya aapka yehi number save karna hai jisme last mein ${lastTwo} aata hai, ya change karna hai?`;
             callData.lastQuestion = prompt;
             console.log(`   📞 Phone confirmation prompt - asking about number ending in ${lastTwo}`);
             activeCalls.set(CallSid, callData);
@@ -995,6 +1043,7 @@ router.post("/process", async (req, res) => {
                 // User said YES/HAAN/SAVE - confirm the registered phone
                 if (callData.customerData?.phone) {
                     callData.extractedData.customer_phone = callData.customerData.phone;
+                    callData.lastQuestion = null; // Clear stale prompt so next missing field is asked
                     console.log(`   ✅ Phone confirmed (positive affirmation): ${callData.customerData.phone}`);
                 } else {
                     console.log(`   ⚠️  Phone confirm but no registered phone available`);
@@ -1056,10 +1105,10 @@ router.post("/process", async (req, res) => {
             let prompt;
             if (callData.extractedData.city === callData.extractedData.branch) {
                 // Same city and branch - simple confirmation
-                prompt = `${callData.extractedData.city} branch sahi hai? Haan ya nahi boliye.`;
+                prompt = `${normalizeSpeechText(callData.extractedData.city)} branch sahi hai? Haan ya nahi boliye.`;
             } else {
                 // Different city and branch - explain which branch will serve
-                prompt = `Aapki machine ${callData.extractedData.city} mein hai? ${callData.extractedData.branch} branch se engineer aayega. Theek hai?`;
+                prompt = `Aapki machine ${normalizeSpeechText(callData.extractedData.city)} mein hai? ${normalizeSpeechText(callData.extractedData.branch)} branch se engineer aayega. Theek hai?`;
             }
             
             callData.lastQuestion = prompt;
@@ -1077,6 +1126,7 @@ router.post("/process", async (req, res) => {
             if (isPositive) {
                 // User confirmed city with YES/HAAN/THEEK
                 callData.cityConfirmed = true;
+                callData.lastQuestion = null; // Clear stale prompt after successful confirmation
                 console.log(`   ✅ City confirmed (positive affirmation): ${callData.extractedData.city}`);
             } else if (isNegative) {
                 // User rejected city with NO/NAHI/GALAT
@@ -1104,16 +1154,16 @@ router.post("/process", async (req, res) => {
         }
 
         // ── STEP 9: Check for side questions (AFTER confirmations) ────────
-        let sideQuestionAnswer = null;
-        const earlyAnswer = answerSideQuestion(userInput, callData);
+        const earlyAnswer = await answerSideQuestion(userInput, callData);
         if (earlyAnswer) {
             console.log(`   💡 Side question detected - answering: "${earlyAnswer}"`);
-            callData.messages.push({ role: "assistant", text: earlyAnswer, timestamp: new Date() });
-            sideQuestionAnswer = earlyAnswer;
-            
-            // Store side question answer but DON'T return/exit
-            // Continue to LLM to ask the next required question
-            console.log(`   ➡️  Side question answered - continuing to LLM for next question`);
+            const nextPrompt = getSmartSilencePrompt(callData, { ignoreLastQuestion: true });
+            const combinedText = `${earlyAnswer} ${nextPrompt}`;
+            callData.lastQuestion = combinedText;
+            callData.messages.push({ role: "assistant", text: combinedText, timestamp: new Date() });
+            activeCalls.set(CallSid, callData);
+            await speak(twiml, combinedText, { emotion: 'professional', callSid: CallSid });
+            return res.type("text/xml").send(twiml.toString());
         }
 
         // ── STEP 10: Existing complaint scenario ─────────────────────
@@ -1169,91 +1219,39 @@ router.post("/process", async (req, res) => {
             console.log(`   ➡️  User wants new complaint - continuing to AI`);
         }
 
-        // ── STEP 12: "Aur kuch bhi?" final confirmation ──────────────
-        // Triggered once all fields are collected — ask before submit
+        // ── STEP 12: Direct submit after all details are collected ──────────────
+        // Triggered once all required fields are ready — no final confirmation prompt
         const missing = missingField(callData.extractedData);
         const machineValidated = !!callData.customerData;
 
-        if (!missing && machineValidated && !callData.awaitingFinalConfirm) {
-            const sideAnswer = answerSideQuestion(userInput);
+        if (!missing && machineValidated) {
+            const sideAnswer = await answerSideQuestion(userInput, callData);
             if (sideAnswer && !isPositiveConfirmation(lo) && !isAddMoreProblem(lo) && !isNegativeConfirmation(lo)) {
-                callData.awaitingFinalConfirm = true;
-                const prompt = `${sideAnswer} Ab complaint submit karun? Haan ya nahi boliye.`;
+                const prompt = `${sideAnswer} Ab main aapki complaint submit kar raha hoon.`;
                 callData.lastQuestion = prompt;
-                console.log(`   💬 Side question answered - asking final confirmation`);
+                console.log(`   💬 Side question answered - proceeding to submit without confirmation`);
                 callData.messages.push({ role: "assistant", text: prompt, timestamp: new Date() });
                 activeCalls.set(CallSid, callData);
                 await speak(twiml, prompt, { emotion: 'professional' });
-                return res.type("text/xml").send(twiml.toString());
+            } else {
+                console.log(`   ✅ All data collected - submitting complaint without final confirmation`);
             }
 
-            callData.awaitingFinalConfirm = true;
-            const prompt = "Aapki complaint submit karun? Haan ya nahi boliye.";
-            callData.lastQuestion = prompt;
-            console.log(`   ✅ All data collected - asking final confirmation`);
-            callData.messages.push({ role: "assistant", text: prompt, timestamp: new Date() });
-            activeCalls.set(CallSid, callData);
-            await speak(twiml, prompt, { emotion: 'professional' });
-            return res.type("text/xml").send(twiml.toString());
-        }
-
-        // ── STEP 13: Handle final confirm answer ─────────────────────
-        if (callData.awaitingFinalConfirm) {
-            const addingMore = extractAllComplaintTitles(userInput);
-            const isConfirming = isPositiveConfirmation(lo);
-            const isNegative = isNegativeConfirmation(lo);
-            const wantsMore = isAddMoreProblem(lo);
-
-            if (isNegative) {
-                console.log(`   ❌ User declined final confirmation - ending call`);
-                await sayFinal(twiml, "Theek hai. Agar kuch aur ho toh dobara call karein. Dhanyavaad!", { context: 'farewell', emotion: 'professional' });
-                twiml.hangup();
-                performanceLogger.endSession(CallSid, 'user_declined');
-                activeCalls.delete(CallSid);
-                return res.type("text/xml").send(twiml.toString());
-            }
-
-            if (addingMore.length > 0 && !isConfirming) {
-                const existingDetails = callData.extractedData.complaint_details
-                    ? callData.extractedData.complaint_details.split('; ').map(s => s.trim()).filter(Boolean)
-                    : [];
-                const alreadyHave = new Set([callData.extractedData.complaint_title, ...existingDetails]);
-                const newOnes = addingMore.filter(c => !alreadyHave.has(c));
-                if (newOnes.length > 0) {
-                    callData.extractedData.complaint_details = [...existingDetails, ...newOnes].join('; ');
-                    console.log(`   📝 Added more complaints: [${newOnes.join(', ')}]`);
-                }
-                callData.awaitingFinalConfirm = false;
-                activeCalls.set(CallSid, callData);
-                return await handleSubmit(callData, twiml, res, CallSid);
-            }
-
-            const sideAnswer = answerSideQuestion(userInput);
-            if (sideAnswer && !isConfirming && !isNegative) {
-                const prompt = `${sideAnswer} Ab complaint submit karun? Haan ya nahi boliye.`;
-                callData.lastQuestion = prompt;
-                console.log(`   💬 Side question during final confirm - asking for explicit confirmation`);
-                callData.messages.push({ role: "assistant", text: prompt, timestamp: new Date() });
-                activeCalls.set(CallSid, callData);
-                await speak(twiml, prompt, { emotion: 'professional' });
-                return res.type("text/xml").send(twiml.toString());
-            }
-
-            if (!isConfirming && !wantsMore) {
-                console.log(`   ➡️  Ambiguous final response - proceeding to submit`);
-                callData.awaitingFinalConfirm = false;
-                activeCalls.set(CallSid, callData);
-                return await handleSubmit(callData, twiml, res, CallSid);
-            }
-
-            console.log(`   ✅ Final confirmation received - submitting complaint`);
             callData.awaitingFinalConfirm = false;
             activeCalls.set(CallSid, callData);
             return await handleSubmit(callData, twiml, res, CallSid);
         }
 
-        if (missing && !callData.awaitingFinalConfirm && !callData.awaitingPhoneConfirm && !callData.awaitingAlternatePhone && !callData.awaitingComplaintAction && !callData.awaitingCityConfirm) {
-            const prompt = getSmartSilencePrompt(callData);
+        if (callData.awaitingFinalConfirm) {
+            console.log(`   ➡️  Final confirmation state detected - submitting complaint directly`);
+            callData.awaitingFinalConfirm = false;
+            activeCalls.set(CallSid, callData);
+            return await handleSubmit(callData, twiml, res, CallSid);
+        }
+
+        const isSideQuestion = callData.intent === 'side_question' || isClarificationQuestion(userInput);
+        if (missing && !callData.awaitingFinalConfirm && !callData.awaitingPhoneConfirm && !callData.awaitingAlternatePhone && !callData.awaitingComplaintAction && !callData.awaitingCityConfirm && !isSideQuestion) {
+            const prompt = getSmartSilencePrompt(callData, { ignoreLastQuestion: true });
             callData.lastQuestion = prompt;
             callData.messages.push({ role: "assistant", text: prompt, timestamp: new Date() });
             activeCalls.set(CallSid, callData);
@@ -1272,14 +1270,9 @@ router.post("/process", async (req, res) => {
         })}`);
 
         if (!missing && machineValidated) {
-            // Safety net — shouldn't reach here normally (caught in step 9)
-            callData.awaitingFinalConfirm = true;
-            const fallbackPrompt = "Aapki complaint submit karun? Haan ya nahi boliye.";
-            callData.lastQuestion = fallbackPrompt;
-            console.log(`   ⚠️  Reached AI section with complete data - using hardcoded fallback`);
+            console.log(`   ⚠️  Reached AI section with complete data - submitting complaint without confirmation`);
             activeCalls.set(CallSid, callData);
-            await speak(twiml, fallbackPrompt, { emotion: 'professional' });
-            return res.type("text/xml").send(twiml.toString());
+            return await handleSubmit(callData, twiml, res, CallSid);
         }
 
         // LLM-FIRST: Let AI handle the conversation with full context
@@ -1315,8 +1308,8 @@ router.post("/process", async (req, res) => {
         
         if (!isGoodResponse) {
             console.warn(`   ⚠️  AI response validation failed - too short or unclear`);
-            // FALLBACK: Use hardcoded smart prompt based on what's missing
-            const fallbackPrompt = getSmartSilencePrompt(callData);
+            // FALLBACK: Use hardcoded smart prompt based on what's missing and avoid stale prompts
+            const fallbackPrompt = getSmartSilencePrompt(callData, { ignoreLastQuestion: true });
             aiResp.text = fallbackPrompt;
             console.log(`   🔄 Using hardcoded fallback prompt: "${fallbackPrompt}"`);
         } else {
@@ -1574,6 +1567,7 @@ function extractAllComplaintTitles(text) {
 }
 
 async function submitComplaint(callData) {
+    const callSid = callData.callSid || callData.CallSid || "unknown";
     try {
         const data = callData.extractedData;
         const c = callData.customerData || {};
