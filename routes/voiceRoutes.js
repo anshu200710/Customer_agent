@@ -47,7 +47,7 @@ function getSmartSilencePrompt(callData, options = {}) {
     if (callData.currentState) {
         switch (callData.currentState) {
             case "COLLECT_MACHINE_NO":
-                return "Machine number bataiye.";
+                return getMachineNumberPrompt(callData.machineNumberAttempts);
             case "COLLECT_COMPLAINT":
                 return "Machine mein kya problem hai? Bataiye.";
             case "COLLECT_STATUS":
@@ -65,7 +65,7 @@ function getSmartSilencePrompt(callData, options = {}) {
 
     // Otherwise, determine what to ask based on missing fields
     if (missing === "machine_no") {
-        return "Machine number bataiye.";
+        return getMachineNumberPrompt(callData.machineNumberAttempts);
     }
     if (missing === "complaint_title") {
         return "Machine mein kya problem hai? Bataiye.";
@@ -82,6 +82,52 @@ function getSmartSilencePrompt(callData, options = {}) {
     
     // All fields collected, waiting for final confirmation
     return "Sab details sahi hain? Haan boliye to complaint register ho jayegi.";
+}
+
+function getMachineNumberPrompt(attempt = 0) {
+    const prompts = [
+        "Machine number bataiye.",
+        "Kripya chassis number bolo, kam se kam 3 ank ka number.",
+        "Machine ka number phir se batayein, sahi digits ke saath.",
+        "Dobara batayein, machine number chahiye."
+    ];
+    return prompts[attempt % prompts.length];
+}
+
+function getUnknownInputPrompt(slot) {
+    switch (slot) {
+        case "machine_no":
+            return "Mujhe machine number samajh nahi aaya, dobara batayein.";
+        case "customer_phone":
+            return "Mujhe aapka mobile number samajh nahi aaya, dobara bataiye.";
+        case "city":
+            return "Mujhe aapka shahar samajh nahi aaya, dobara boliye.";
+        case "complaint_title":
+            return "Mujhe problem samajh nahi aayi, thoda clearly bataiye.";
+        case "machine_status":
+            return "Kya machine band hai ya chal rahi hai? Dobara bataiye.";
+        default:
+            return "Mujhe samajh nahi aaya, dobara bataiye.";
+    }
+}
+
+function isMachineNumberCandidate(text) {
+    const digits = String(text || "").replace(/\D/g, "");
+    return digits.length >= 3;
+}
+
+async function handleSideQuestion(input, callData) {
+    const faqResult = searchFAQ(input);
+    if (faqResult) {
+        return { answer: faqResult.answer, source: "faq" };
+    }
+
+    const answer = await answerSideQuestion(input, callData);
+    if (answer) {
+        return { answer, source: "ai" };
+    }
+
+    return { answer: null, source: null };
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -819,13 +865,13 @@ router.post("/process", async (req, res) => {
             }
         }
 
-        if (callData.intent === 'side_question' || callData.intent === 'ask_clarification') {
-            const answer = await answerSideQuestion(userInput, callData);
-            if (answer) {
-                console.log(`   💡 Side question early handled with AI answer`);
-                callData.lastQuestion = null;
+        const isSideIntent = callData.intent === 'side_question' || callData.intent === 'ask_clarification' || isClarificationQuestion(userInput);
+        if (isSideIntent) {
+            const sideResult = await handleSideQuestion(userInput, callData);
+            if (sideResult.answer) {
+                console.log(`   💡 Intent-first side question handled (${sideResult.source})`);
                 const nextPrompt = getSmartSilencePrompt(callData, { ignoreLastQuestion: true });
-                const responseText = `${answer} ${nextPrompt}`.trim();
+                const responseText = `${sideResult.answer} ${nextPrompt}`.trim();
                 callData.lastQuestion = responseText;
                 callData.messages.push({ role: 'assistant', text: responseText, timestamp: new Date() });
                 activeCalls.set(CallSid, callData);
@@ -931,6 +977,15 @@ router.post("/process", async (req, res) => {
                     await speak(twiml, prompt, { emotion: 'professional' });
                     return res.type("text/xml").send(twiml.toString());
                 }
+            } else if (!isMachineNumberCandidate(callData.extractedData.machine_no)) {
+                callData.machineNumberAttempts++;
+                const prompt = getUnknownInputPrompt("machine_no");
+                callData.lastQuestion = prompt;
+                callData.extractedData.machine_no = null;
+                console.warn(`   ❌ Machine number input invalid - ${prompt}`);
+                activeCalls.set(CallSid, callData);
+                await speak(twiml, prompt, { emotion: 'professional', callSid: CallSid });
+                return res.type("text/xml").send(twiml.toString());
             } else {
                 console.log(`   🔍 Validating machine number: ${callData.extractedData.machine_no}`);
                 const v = await validateMachineNumber(callData.extractedData.machine_no);
@@ -1362,12 +1417,16 @@ router.post("/process", async (req, res) => {
             callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
             const result = await submitComplaint(callData);
             const id = result.sapId || result.jobId || "";
-            
-            if (id) {
-                const idFormatted = formatNumberForTTS(id);
-                await sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${id}. Engineer jaldi contact karega. Dhanyavaad!`, { context: 'confirmation', emotion: 'professional' });
+
+            if (result.success) {
+                if (id) {
+                    const idFormatted = formatNumberForTTS(id);
+                    await sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${id}. Engineer jaldi contact karega. Dhanyavaad!`, { context: 'confirmation', emotion: 'professional', callSid: CallSid });
+                } else {
+                    await sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!", { context: 'confirmation', emotion: 'professional', callSid: CallSid });
+                }
             } else {
-                await sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!", { context: 'confirmation', emotion: 'professional' });
+                await sayFinal(twiml, "Dikhat hui complaint submit karte waqt. Thodi der baad dubara kijiye ya call karein.", { context: 'error', emotion: 'empathetic', callSid: CallSid });
             }
             twiml.hangup();
             activeCalls.delete(CallSid);
@@ -1416,10 +1475,14 @@ async function handleSubmit(callData, twiml, res, CallSid) {
     const result = await submitComplaint(callData);
     const id = result.sapId || result.jobId || "";
 
-    if (id) {
-        await sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${id}. Engineer jaldi contact karega. Dhanyavaad!`, { context: 'confirmation', emotion: 'professional' });
+    if (result.success) {
+        if (id) {
+            await sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${id}. Engineer jaldi contact karega. Dhanyavaad!`, { context: 'confirmation', emotion: 'professional', callSid: CallSid });
+        } else {
+            await sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!", { context: 'confirmation', emotion: 'professional', callSid: CallSid });
+        }
     } else {
-        await sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!", { context: 'confirmation', emotion: 'professional' });
+        await sayFinal(twiml, "Dikhat hui complaint submit karte waqt. Thodi der baad dubara kijiye ya call karein.", { context: 'error', emotion: 'empathetic', callSid: CallSid });
     }
 
     twiml.hangup();
