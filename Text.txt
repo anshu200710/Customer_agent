@@ -29,3 +29,467 @@ Customer Action: The user hears a summary and says "Haan, submit kar do" (Yes, s
 System Action: The AI sends the full data package to the JCB Complaint API. The call ends with a polite thank-you message.
 📈 Business Outcome
 When the call ends, your backend system automatically receives a completed complaint entry in the same format as a manual entry, including Machine Model, Customer Name, and job location, ready for your service team to take action.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+You don’t need another generic flow—you already have a **very strong system design** in your docs. What you’re missing is a **clear “production conversation brain” (state + intent + behavior layer)** that matches all your test cases.
+
+I’ll give you a **perfect real-world flow architecture** that exactly fits your test conversations + documentation.
+
+---
+
+# 🚀 FINAL AI VOICE AGENT FLOW (PRODUCTION READY)
+
+This is your **actual system flow (not theory)** based on your docs + TC cases.
+
+---
+
+# 🧠 1. CORE PRINCIPLE (MOST IMPORTANT)
+
+Your agent should NOT follow a fixed script.
+
+👉 It should follow:
+
+```
+STATE MACHINE + INTENT ENGINE + MEMORY
+```
+
+✔ Collect only missing data
+✔ Never repeat already known data
+✔ Handle interruptions anytime
+✔ Resume flow automatically
+
+This is already aligned with your system design 
+
+---
+
+# 🧩 2. MASTER CALL FLOW (REAL STRUCTURE)
+
+## 🔹 STATE FLOW
+
+```
+START
+ ↓
+GREETING
+ ↓
+INTENT DETECTION
+ ↓
+SMART DATA COLLECTION (NON-LINEAR)
+ ↓
+VALIDATION + CONFIRMATION
+ ↓
+SUMMARY
+ ↓
+SUBMIT
+ ↓
+END
+```
+
+---
+
+# 🎯 3. INTENT-FIRST ENGINE (VERY IMPORTANT)
+
+Before ANY step → detect intent:
+
+### 🎯 Possible Intents
+
+| Intent        | Example                      |
+| ------------- | ---------------------------- |
+| complaint     | "machine start nahi ho rahi" |
+| give_machine  | "3305447"                    |
+| give_city     | "Bhilwara"                   |
+| side_question | "engine kab aayega?"         |
+| old_complaint | "engineer nahi aaya"         |
+| frustration   | "3 din ho gaye!"             |
+| correction    | "galat number hai"           |
+| wait          | "ek minute"                  |
+
+---
+
+### ⚡ RULE:
+
+```
+IF side_question → answer → RETURN to same state  
+IF frustration → calm → prioritize → continue  
+IF old complaint → fetch → offer actions  
+IF data given → extract → store  
+```
+
+---
+
+# 🧠 4. SMART DATA COLLECTION (NON-LINEAR)
+
+Instead of fixed order:
+
+👉 Extract everything from user speech
+
+Example (TC-05):
+
+```
+User: "Machine band hai. Bhilwara. Number 9876543210"
+```
+
+System extracts:
+
+```
+✓ machine_status
+✓ city
+✓ phone
+```
+
+Then ask ONLY missing:
+
+```
+→ machine number
+```
+
+---
+
+### 🔥 GOLDEN RULE
+
+```
+Never ask what you already know
+```
+
+---
+
+# 🔢 5. CHASSIS HANDLING ENGINE
+
+Handle ALL cases:
+
+### ✔ Full input
+
+```
+3305447
+```
+
+### ✔ Chunk input
+
+```
+33 → 05 → 447
+```
+
+### ✔ Spoken numbers
+
+```
+teen teen zero paanch char
+```
+
+### ✔ Wrong → retry → fallback
+
+---
+
+### 🔁 Retry Logic (TC-04)
+
+```
+Try 1 → not found  
+Try 2 → not found  
+Try 3 → not found  
+
+→ Fallback:
+"Engineer bhej raha hun"
+```
+
+---
+
+# 📞 6. OLD COMPLAINT FLOW (TC-08)
+
+### Detection:
+
+```
+"Maine pehle complaint ki thi"
+```
+
+### Flow:
+
+```
+1. Fetch complaint
+2. Respond:
+   "Complaint SAP123 mili"
+3. Give options:
+   - New complaint
+   - Urgent escalation
+```
+
+---
+
+# 😡 7. FRUSTRATION HANDLING
+
+### Trigger words:
+
+* "3 din ho gaye"
+* "koi nahi aaya"
+* "bahut pareshan hun"
+
+### Response pattern:
+
+```
+1. Acknowledge
+2. Apologize
+3. Assure action
+4. Mark urgent
+```
+
+Example:
+
+```
+"Samajh raha hun ji, main abhi urgent mark kar deta hun"
+```
+
+---
+
+# 🔄 8. SIDE QUESTION HANDLING (VERY CRITICAL)
+
+From your earlier bug 👇
+
+### Flow:
+
+```
+User asks question
+→ detect side_question
+→ answer from FAQ / AI
+→ DO NOT change state
+→ resume previous question
+```
+
+Example:
+
+```
+Agent: Machine number bataiye
+User: Engineer kab aayega?
+
+Agent:
+"Engineer jaldi assign hoga. Ab machine number bataiye"
+```
+
+---
+
+# 🧾 9. MULTI-PROBLEM HANDLING (TC-06, TC-07)
+
+### Input:
+
+```
+Engine start nahi
+Tel leak
+Brake fail
+Noise
+```
+
+### Output:
+
+```
+complaint_title = main issue  
+complaint_details = all issues
+```
+
+Then:
+
+```
+"Aur koi problem?"
+```
+
+---
+
+# 🔁 10. CORRECTION FLOW (TC-09)
+
+```
+User: galat number hai
+```
+
+Flow:
+
+```
+1. Clear previous data
+2. Ask again
+3. Accept new input
+```
+
+---
+
+# ⏳ 11. WAIT HANDLING (TC-10)
+
+```
+User: ek minute
+```
+
+Response:
+
+```
+"Ji zarur, main wait kar raha hun"
+```
+
+(No timeout immediately)
+
+---
+
+# 🧍 12. HUMAN-LIKE BEHAVIOR LAYER
+
+Your agent should behave like:
+
+### ✔ Natural
+
+### ✔ Patient
+
+### ✔ Memory-aware
+
+### ✔ Non-repetitive
+
+---
+
+# 🧠 13. MEMORY STRUCTURE
+
+```
+callData = {
+  machine_no
+  phone
+  city
+  complaint_details
+  machine_status
+  current_state
+  retry_count
+  is_angry
+}
+```
+
+---
+
+# 🔄 14. COMPLETE EXECUTION LOOP
+
+```
+User Speech
+ ↓
+STT
+ ↓
+Intent Detection
+ ↓
+Data Extraction
+ ↓
+Update Memory
+ ↓
+Check Missing Fields
+ ↓
+Generate Response
+ ↓
+TTS
+ ↓
+Repeat
+```
+
+---
+
+# 🧠 15. FINAL SUBMISSION FLOW
+
+Before submit:
+
+```
+Summary:
+- Machine
+- Problem
+- City
+- Phone
+```
+
+Then:
+
+```
+User: Haan
+→ API CALL
+→ complaint_id
+→ final message
+```
+
+---
+
+# 🧪 16. EDGE CASE HANDLING (VERY IMPORTANT)
+
+Your system MUST support these (already in docs):
+
+✔ Slow digits
+✔ Mixed language
+✔ Wrong order
+✔ Background noise
+✔ Third-party caller
+✔ No phone
+✔ Preventive service
+
+(covered in your edge doc )
+
+---
+
+# 💡 17. FINAL PERFECT FLOW (SIMPLIFIED)
+
+```
+START
+ ↓
+Greet
+ ↓
+Understand intent
+ ↓
+Extract all data from user
+ ↓
+Ask ONLY missing info
+ ↓
+Handle interruptions anytime
+ ↓
+Confirm details
+ ↓
+Submit complaint
+ ↓
+End politely
+```
+
+---
+
+# ⚠️ WHAT YOU WERE MISSING (REAL ISSUE)
+
+From your earlier problems:
+
+❌ Flow-based system
+❌ Asking same question again
+❌ Ignoring side questions
+
+---
+
+### ✅ FIX:
+
+You need:
+
+```
+Intent-first routing
++
+State memory
++
+Resume flow
+```
+
+---
+
+# 🏁 FINAL ANSWER (IN ONE LINE)
+
+👉 Your AI agent should behave like:
+
+**"A smart human agent who listens, understands everything at once, answers questions anytime, and only asks what’s missing."**
+
+--

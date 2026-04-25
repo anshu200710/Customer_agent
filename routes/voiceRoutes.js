@@ -731,6 +731,7 @@ router.post("/process", async (req, res) => {
         const inputMethod = Digits ? "DTMF" : (SpeechResult ? "SPEECH" : "SILENCE");
         callData.turnCount++;
         const lo = userInput.toLowerCase();
+        let sideQuestionAnswer = null;
 
         // Log STT timing and usage
         const sttStartTime = turnStartTime; // STT processing happened before this handler
@@ -1209,11 +1210,11 @@ router.post("/process", async (req, res) => {
         }
 
         // ── STEP 9: Check for side questions (AFTER confirmations) ────────
-        const earlyAnswer = await answerSideQuestion(userInput, callData);
-        if (earlyAnswer) {
-            console.log(`   💡 Side question detected - answering: "${earlyAnswer}"`);
+        sideQuestionAnswer = await answerSideQuestion(userInput, callData);
+        if (sideQuestionAnswer) {
+            console.log(`   💡 Side question detected - answering: "${sideQuestionAnswer}"`);
             const nextPrompt = getSmartSilencePrompt(callData, { ignoreLastQuestion: true });
-            const combinedText = `${earlyAnswer} ${nextPrompt}`;
+            const combinedText = `${sideQuestionAnswer} ${nextPrompt}`;
             callData.lastQuestion = combinedText;
             callData.messages.push({ role: "assistant", text: combinedText, timestamp: new Date() });
             activeCalls.set(CallSid, callData);

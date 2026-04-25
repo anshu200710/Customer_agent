@@ -83,38 +83,68 @@ export const SERVICE_CENTERS = [
    🧠 SYSTEM PROMPT
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function buildSystemPrompt(callData) {
-    const d = callData.extractedData;
+    const d = callData.extractedData || {};
     const intent = callData.intent || 'unknown';
     const cityList = SERVICE_CENTERS.map(c => c.city_name).join(', ');
-    
-    return `You are Priya — a warm, intelligent, fast-speaking female service agent at Rajesh Motors JCB service center.
+    const collected = Object.entries(d)
+        .filter(([k, v]) => v && !k.startsWith('_'))
+        .map(([k, v]) => `${k}=${v}`)
+        .join(' | ') || 'none';
 
-Collected Data: ${Object.entries(d).filter(([k, v]) => v && !k.startsWith('_')).map(([k, v]) => `${k}=${v}`).join(' | ') || 'nothing yet'}
-User Intent: ${intent}
+    const missing = [];
+    if (!d.machine_no) missing.push('machine_no');
+    if (!d.complaint_title) missing.push('complaint_title');
+    if (!d.machine_status) missing.push('machine_status');
+    if (!d.city) missing.push('city');
+    if (!d.customer_phone) missing.push('customer_phone');
+    const nextStep = missing.length === 0 ? 'confirm_or_submit' : missing[0];
 
-RULES:
-1. Reply in Hindi, naturally and warm
-2. Keep replies SHORT — max 12 words
-3. Ask only for the next missing required field
-4. Do not answer general questions or side topics here
-5. Extract: machine_no (4-7 digits), complaint_title, machine_status (Breakdown or Running With Problem), city, customer_phone (10 digits)
-6. After ALL data: ask "Theek hai, aur koi problem? Save kar dun?"
-
-Current Status: ${!d.machine_no ? "Need machine number" : !d.complaint_title ? "Need complaint description" : !d.machine_status ? "Ask: Machine band hai ya problem ke saath chal rahi hai?" : !d.city ? `Need city from: ${cityList}` : !d.customer_phone ? "Need 10-digit phone" : "Ready to save — ask final confirmation"}
-
-OUTPUT FORMAT (end every response with this):
-[your reply] ### {"extracted":{"machine_no":"${d.machine_no || ''}","complaint_title":"${d.complaint_title || ''}","machine_status":"${d.machine_status || ''}","city":"${d.city || ''}","customer_phone":"${d.customer_phone || ''}","complaint_details":"${d.complaint_details || ''}"},"ready_to_submit":false}`;
+    return [
+        `You are Priya, the Rajesh Motors JCB service voice agent.`,
+        `You speak polite, friendly Hindi/Hinglish, and you follow a stateful complaint collection flow.`,
+        `You may ask only one thing at a time and only ask for data that is still missing.`,
+        `Never repeat data that is already collected.`,
+        `If the user asks a side question, do not answer the side question here. Instead redirect back to the current missing field.`,
+        `Always preserve the fields exactly as collected and do not invent a phone number, machine number, or city.`,
+        `Use exact service center city names from this list: ${cityList}`,
+        ``,
+        `Collected Data: ${collected}`,
+        `User Intent: ${intent}`,
+        `Next Step: ${nextStep}`,
+        ``,
+        `Required fields:`,
+        `- machine_no (4-7 digits)`,
+        `- complaint_title (primary issue summary)`,
+        `- machine_status (Breakdown or Running With Problem)`,
+        `- city (service city name)`,
+        `- customer_phone (10-digit Indian mobile number)`,
+        ``,
+        `Rules:`,
+        `1. Keep the reply short, polite, and clear.`,
+        `2. Ask only the next missing field if any data is missing.`,
+        `3. If all required fields are present, ask for final confirmation.`,
+        `4. If the user confirms, set ready_to_submit true in the JSON output.`,
+        `5. Respond in natural language first, then append JSON after ###.`,
+        ``,
+        `OUTPUT FORMAT:`,
+        `[reply] ### {"reply":"[same text as reply]","extracted":{"machine_no":"${d.machine_no || ''}","complaint_title":"${d.complaint_title || ''}","machine_status":"${d.machine_status || ''}","city":"${d.city || ''}","customer_phone":"${d.customer_phone || ''}","complaint_details":"${d.complaint_details || ''}"},"ready_to_submit":false}`
+    ].join('\n');
 }
 
 export async function getAIResponse(promptText) {
     try {
+        const model = process.env.GROQ_DEPLOYMENT || process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o-mini";
+        const systemMessage = process.env.GROQ_DEPLOYMENT
+            ? "You are a high-precision Groq-style assistant for Rajesh Motors. Reply concisely in natural Hindi/Hinglish."
+            : "You are a helpful JCB service agent. Answer clearly in Hinglish.";
+
         const resp = await client.chat.completions.create({
-            model: process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4o-mini",
+            model,
             messages: [
-                { role: "system", content: "You are a helpful JCB service agent. Answer clearly in Hinglish." },
+                { role: "system", content: systemMessage },
                 { role: "user", content: promptText }
             ],
-            temperature: 0.6,
+            temperature: 0.15,
             max_tokens: 120,
             top_p: 0.9,
         });
@@ -170,45 +200,42 @@ function normalizeExtractedValue(v) {
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export async function extractEntities(userInput, callData) {
     const startTime = Date.now();
-    
+
     try {
-        const extractionPrompt = `Extract entities from this user input for a JCB complaint system.
-
-User Input: "${userInput}"
-
-Current Context:
-- Machine Number: ${callData.extractedData.machine_no || 'not collected'}
-- Complaint: ${callData.extractedData.complaint_title || 'not collected'}
-- City: ${callData.extractedData.city || 'not collected'}
-- Phone: ${callData.extractedData.customer_phone || 'not collected'}
-- Customer Name: ${callData.extractedData.customer_name || 'not collected'}
-
-Classify the user's INTENT and extract ENTITIES. Return ONLY valid JSON:
-
-{
-  "intent": "provide_info" | "side_question" | "confirm" | "deny" | "ask_clarification",
-  "confirm_type": "yes" | "no" | null,
-  "entities": {
-    "machine_no": "1234567" | null,
-    "customer_name": "Rajesh Prajapati" | null,
-    "complaint_title": "Engine Not Starting" | null,
-    "machine_status": "Breakdown" | "Running With Problem" | null,
-    "city": "JAIPUR" | null,
-    "customer_phone": "9876543210" | null,
-    "complaint_details": "Oil Leakage; Brake Failure" | null
-  }
-}
-
-Rules:
-- Intent "provide_info": User is giving complaint/machine/city/phone info
-- Intent "side_question": User is asking about process/cost/time/agent name
-- Intent "confirm": User is saying yes/haan/theek hai
-- Intent "deny": User is saying no/nahi
-- Extract machine numbers as 4-7 digit strings
-- Extract phone as 10-digit Indian numbers
-- Use exact city names from: ${SERVICE_CENTERS.map(c => c.city_name).join(', ')}
-- complaint_title should be primary problem in English
-- machine_status: "Breakdown" if completely stopped, "Running With Problem" if still working`;
+        const cityList = SERVICE_CENTERS.map(c => c.city_name).join(', ');
+        const extractionPrompt =
+            'Extract entities from this user input for a JCB complaint system.\n\n' +
+            'User Input: "' + userInput + '"\n\n' +
+            'Current Context:\n' +
+            '- Machine Number: ' + (callData.extractedData.machine_no || 'not collected') + '\n' +
+            '- Complaint: ' + (callData.extractedData.complaint_title || 'not collected') + '\n' +
+            '- City: ' + (callData.extractedData.city || 'not collected') + '\n' +
+            '- Phone: ' + (callData.extractedData.customer_phone || 'not collected') + '\n' +
+            '- Customer Name: ' + (callData.extractedData.customer_name || 'not collected') + '\n\n' +
+            'Classify the user\'s INTENT and extract ENTITIES. Return ONLY valid JSON:\n\n' +
+            '{\n' +
+            '  "intent": "provide_info" | "side_question" | "confirm" | "deny" | "ask_clarification",\n' +
+            '  "confirm_type": "yes" | "no" | null,\n' +
+            '  "entities": {\n' +
+            '    "machine_no": "1234567" | null,\n' +
+            '    "customer_name": "Rajesh Prajapati" | null,\n' +
+            '    "complaint_title": "Engine Not Starting" | null,\n' +
+            '    "machine_status": "Breakdown" | "Running With Problem" | null,\n' +
+            '    "city": "JAIPUR" | null,\n' +
+            '    "customer_phone": "9876543210" | null,\n' +
+            '    "complaint_details": "Oil Leakage; Brake Failure" | null\n' +
+            '  }\n' +
+            '}\n\n' +
+            'Rules:\n' +
+            '- Intent "provide_info": User is giving complaint/machine/city/phone info\n' +
+            '- Intent "side_question": User is asking about process/cost/time/agent name\n' +
+            '- Intent "confirm": User is saying yes/haan/theek hai\n' +
+            '- Intent "deny": User is saying no/nahi\n' +
+            '- Extract machine numbers as 4-7 digit strings\n' +
+            '- Extract phone as 10-digit Indian numbers\n' +
+            '- Use exact city names from: ' + cityList + '\n' +
+            '- complaint_title should be primary problem in English\n' +
+            '- machine_status: "Breakdown" if completely stopped, "Running With Problem" if still working';
 
         const messages = [
             { role: "system", content: "You are an entity extraction AI. Return ONLY valid JSON. No explanations." },
@@ -230,7 +257,7 @@ Rules:
 
         let parsed;
         try {
-            const cleanJson = raw.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
+            const cleanJson = raw.replace(/```json\s * /g, '').replace(/```\s*$/g, '').trim();
             parsed = JSON.parse(cleanJson);
         } catch (e) {
             console.error('❌ Failed to parse extraction JSON:', raw);
@@ -243,7 +270,7 @@ Rules:
         }
 
         const latency = Date.now() - startTime;
-        console.log(`   🧠 Entity extraction: ${normalizeExtractedValue(parsed.intent) || 'provide_info'} | ${JSON.stringify(cleanedEntities)} (${latency}ms)`);
+        console.log(`   🧠 Entity extraction: ${ normalizeExtractedValue(parsed.intent) || 'provide_info' } | ${ JSON.stringify(cleanedEntities) } (${ latency }ms)`);
 
         return {
             intent: normalizeExtractedValue(parsed.intent) || 'provide_info',
@@ -326,7 +353,7 @@ export async function getSmartAIResponse(callData) {
 
         if (sepIdx !== -1) {
             try {
-                const jsonStr = raw.slice(sepIdx + 3).trim().replace(/```json|```/g, "");
+                const jsonStr = raw.slice(sepIdx + 3).trim().replace(/```json | ```/g, "");
                 const match = jsonStr.match(/\{[\s\S]*\}/);
                 if (match) {
                     const parsed = JSON.parse(match[0]);
@@ -368,13 +395,13 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        replyText = replyText.replace(/```[\s\S]*?```/g, "").replace(/###[\s\S]*/g, "").trim();
+        replyText = replyText.replace(/```[\s\S]*? ```/g, "").replace(/###[\s\S]*/g, "").trim();
 
         if (readyToSubmit) {
             const v = validateExtracted(merged);
             if (!v.valid) { 
                 readyToSubmit = false; 
-                console.warn(`⚠️ Not ready: ${v.reason}`); 
+                console.warn(`⚠️ Not ready: ${ v.reason } `); 
             }
         }
 
@@ -397,7 +424,7 @@ export async function getSmartAIResponse(callData) {
             }
         );
 
-        console.log(`   🤖 AI: "${replyText}" | ready:${readyToSubmit}`);
+        console.log(`   🤖 AI: "${replyText}" | ready:${ readyToSubmit } `);
         return { text: replyText, extractedData: merged, readyToSubmit };
 
     } catch (err) {
@@ -441,7 +468,7 @@ export function extractAllData(text, cur = {}) {
     };
     let normalizedText = text;
     for (const [word, digit] of Object.entries(numberMap)) {
-        normalizedText = normalizedText.replace(new RegExp(`\\b${word}\\b`, "gi"), digit);
+        normalizedText = normalizedText.replace(new RegExp(`\\b${ word } \\b`, "gi"), digit);
     }
     const lo = normalizedText.toLowerCase().replace(/[।\.\!\?]/g, " ").replace(/\s+/g, " ").trim();
 
@@ -604,7 +631,7 @@ function validateExtracted(data) {
     const required = ["machine_no", "complaint_title", "machine_status", "city", "city_id", "customer_phone"];
     for (const f of required) {
         if (!data[f] || data[f] === "NA" || data[f] === "Unknown")
-            return { valid: false, reason: `Missing ${f}` };
+            return { valid: false, reason: `Missing ${ f } ` };
     }
     if (!/^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(String(data.customer_phone))) return { valid: false, reason: "Bad phone" };
     if (!/^\d{4,7}$/.test(data.machine_no)) return { valid: false, reason: "Bad machine_no" };
