@@ -537,10 +537,6 @@ Generate your JSON response now:`;
                 readyToSubmit = false;
                 console.warn(`⚠️ LLM said ready_to_submit but validation failed: ${v.reason}`);
             }
-            if (!callData.customerData) {
-                readyToSubmit = false;
-                console.warn(`⚠️ LLM said ready_to_submit but machine not validated in DB`);
-            }
         }
 
         const latency = Date.now() - startTime;

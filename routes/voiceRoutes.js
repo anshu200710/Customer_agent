@@ -342,7 +342,7 @@ router.post("/process", async (req, res) => {
                     callData.extractedData.machine_no = null;
                 }
             } else if (/^\d{4,7}$/.test(mn)) {
-                // Valid chassis number length - validate
+                // Valid chassis number length - validate if possible, but keep it even if lookup fails
                 console.log(`   🔍 Validating chassis: ${mn}`);
                 const v = await validateMachineNumber(mn);
                 if (v.valid) {
@@ -352,18 +352,8 @@ router.post("/process", async (req, res) => {
                     callData.pendingPhoneConfirm = true;
                     console.log(`   ✅ Machine validated: ${v.data.name} | ${v.data.city}`);
                 } else {
-                    callData.machineNumberAttempts++;
-                    callData.extractedData.machine_no = null;
-                    console.warn(`   ❌ Machine not found (attempt ${callData.machineNumberAttempts})`);
-
-                    // After 3 failed attempts — escalate and end
-                    if (callData.machineNumberAttempts >= 3) {
-                        serviceLogger.endSession(CallSid, 'machine_not_found');
-                        await sayFinal(twiml, "Machine number nahi mil raha ji. Engineer ko message bhej deta hun. Dhanyavaad!", { callSid: CallSid });
-                        twiml.hangup();
-                        activeCalls.delete(CallSid);
-                        return res.type("text/xml").send(twiml.toString());
-                    }
+                    console.warn(`   ⚠️ Chassis ${mn} not found in DB; accepting entered number and continuing`);
+                    // Keep machine_no so the flow can continue with customer-provided chassis
                 }
             }
         }
@@ -408,8 +398,9 @@ router.post("/process", async (req, res) => {
         /* ── STEP 6: All data collected — direct submit ── */
         const missing = missingField(callData.extractedData);
         const machineValidated = !!callData.customerData;
+        const machineReady = machineValidated || !!callData.extractedData.machine_no;
 
-        if (!missing && machineValidated && callData.awaitingFinalConfirm) {
+        if (!missing && machineReady && callData.awaitingFinalConfirm) {
             // User already got the confirmation question, now they replied — submit
             const isPositive = /(\b(haan|ha|han|theek|yes|bilkul|sahi|ok|haan ji|ha ji|kar do|save|register)\b|हां|हा|ठीक)/i.test(userInput);
             const isNegative = /(\b(nahi|nai|nahin|no|mat|galat|wrong|change)\b|नहीं|न|गलत)/i.test(userInput);
@@ -468,7 +459,7 @@ router.post("/process", async (req, res) => {
         }
 
         /* ── STEP 9: LLM says ready to submit ── */
-        if (aiResp.readyToSubmit && machineValidated) {
+        if (aiResp.readyToSubmit && machineReady) {
             callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
             activeCalls.set(CallSid, callData);
             return await handleSubmit(callData, twiml, res, CallSid);
@@ -476,7 +467,7 @@ router.post("/process", async (req, res) => {
 
         /* ── STEP 10: All data collected but no confirmation yet ── */
         const stillMissing = missingField(callData.extractedData);
-        if (!stillMissing && machineValidated && !callData.awaitingFinalConfirm) {
+        if (!stillMissing && machineReady && !callData.awaitingFinalConfirm) {
             // LLM will ask for confirmation naturally — mark we're in that state
             callData.awaitingFinalConfirm = true;
             console.log(`   ✅ All data ready — LLM will ask for confirmation`);
