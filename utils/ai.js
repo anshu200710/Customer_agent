@@ -117,7 +117,7 @@ function buildSystemPrompt(callData) {
     // Build transaction log
     const transactionLog = [];
     if (callData.customerData) {
-        transactionLog.push(`✅ Machine ${callData.customerData.machineNo} validated → ${callData.customerData.name}`);
+        transactionLog.push(`✅ Turn ${callData.messages.findIndex(m => m.role === 'user' && /\d{4,7}/.test(m.text)) + 1 || 1}: Machine ${callData.customerData.machineNo} validated → ${callData.customerData.name}`);
     }
     if (d.complaint_title) {
         transactionLog.push(`✅ Complaint collected: ${d.complaint_title}`);
@@ -131,9 +131,6 @@ function buildSystemPrompt(callData) {
     if (d.customer_phone) {
         transactionLog.push(`✅ Phone collected: ${d.customer_phone}`);
     }
-    
-    // Get last agent message
-    const lastAgentMessage = callData.messages.filter(m => m.role === 'assistant').slice(-1)[0]?.text || '';
 
     // Determine the single most important next question
     let nextQuestion = "";
@@ -162,6 +159,24 @@ Machine Number Attempts: ${machineAttempts}/3
 Collected Data: ${have.length ? have.join(" | ") : "nothing yet"}
 Still Need: ${need.join(", ") || "NOTHING — ready to confirm"}
 Next Action: ${nextQuestion}
+
+=== TRANSACTION LOG (NEVER REPEAT THESE) ===
+${transactionLog.length ? transactionLog.join('\n') : 'No data collected yet'}
+
+=== ⛔ CRITICAL: DO NOT ASK FOR THESE FIELDS (LOOP PREVENTION) ===
+${doNotAsk.length ? doNotAsk.map(f => `❌ NEVER ask for ${f}`).join('\n') : 'No restrictions yet - all fields can be asked'}
+
+${doNotAsk.length ? `
+🚫 ABSOLUTE RULES TO PREVENT LOOPS:
+1. If customer mentions a field from DO NOT ASK list, acknowledge and move on
+2. NEVER ask "machine number bataiye" if machine_no is already collected
+3. NEVER ask "kya problem hai" if complaint_title is already collected
+4. NEVER ask "band hai ya chal rahi" if machine_status is already collected
+5. NEVER ask "kaunse shahar" if city is already collected
+6. NEVER ask "phone number" if customer_phone is already collected
+7. If customer repeats collected info, say: "Yeh mil gaya. [Ask next missing field]"
+8. If customer is confused, gently redirect: "Theek hai, ab [next field] bataiye"
+` : ''}
 
 === RECENT CONVERSATION ===
 ${conversationHistory || 'Call just started'}
@@ -192,16 +207,22 @@ You are an AI agent with LOGICAL REASONING and CONTEXTUAL UNDERSTANDING.
    - Be patient with rural customers who may take time to find documents
 
 5. **Question Handling - ALWAYS COMBINE ANSWER + NEXT QUESTION**:
-   - If customer asks "kitna time lagega?" → Answer: "Engineer jaldi call karega. Machine number bataiye?"
-   - If customer asks "kya karna padega?" → Explain: "Complaint register karenge. Machine number bataiye?"
-   - If customer asks "aap kaun?" → "Main Priya, Rajesh Motors se. Machine number bataiye?"
-   - If customer asks about cost/price → "Engineer dekhega. Pehle machine number bataiye?"
+   - If customer asks "kitna time lagega?" → Answer: "Engineer jaldi call karega. [Next missing field]?"
+   - If customer asks "kya karna padega?" → Explain: "Complaint register karenge. [Next missing field]?"
+   - If customer asks "aap kaun?" → "Main Priya, Rajesh Motors se. [Next missing field]?"
+   - If customer asks about cost/price → "Engineer dekhega. [Next missing field]?"
    - **RULE: NEVER answer a side question and stop. ALWAYS add the next required question immediately.**
 
 6. **Error Recovery**:
    - If you asked for machine number and customer gave complaint instead, acknowledge the complaint FIRST: "Theek hai ji, [complaint] note kar liya. Machine number bhi bata dijiye."
    - If customer is confused about what to say, give examples: "Jaise: engine start nahi, ya gear problem, ya hydraulic slow"
    - If customer gives wrong format, guide gently: "Machine number 4 se 7 digit ka hota hai ji"
+
+7. **Loop Prevention Intelligence**:
+   - If customer repeats already collected info: "Yeh mil gaya. Ab [next field] bataiye."
+   - If customer says "maine abhi diya": "Haan, mil gaya. Ab [next field] chahiye."
+   - If customer is confused: "Theek hai, [collected field] note hai. Ab [next field] bataiye."
+   - NEVER ask for the same field twice - check DO NOT ASK list above
 
 === LANGUAGE RULES ===
 Understand Hindi, English, Rajasthani, Marwari naturally.
@@ -429,6 +450,78 @@ export async function getSmartAIResponse(callData) {
 
         // Clean reply
         replyText = replyText.replace(/```[\s\S]*?```/g, "").replace(/###[\s\S]*/g, "").trim();
+
+        // ⛔ LOOP PREVENTION: Validate response doesn't ask for already collected fields
+        const d = callData.extractedData;
+        const replyLower = replyText.toLowerCase();
+        
+        // Check if asking for machine number when already collected
+        if (d.machine_no && /machine\s*(number|no|नंबर|नम्बर)|chassis|बताइए|बताइये/.test(replyLower) && /number|नंबर/.test(replyLower)) {
+            console.warn(`⚠️ [LOOP DETECTED] AI asking for machine_no but already have: ${d.machine_no}`);
+            // Override with smart redirect
+            if (!d.complaint_title) {
+                replyText = "Machine number mil gaya. Kya problem hai?";
+            } else if (!d.machine_status) {
+                replyText = "Machine bilkul band hai ya chal rahi hai?";
+            } else if (!d.city) {
+                replyText = "Aap kaunse shahar mein hain?";
+            } else if (!d.customer_phone) {
+                replyText = "Aapka phone number?";
+            } else {
+                replyText = "Sab details mil gayi. Confirm kar dun?";
+            }
+            console.log(`   ✅ [LOOP FIXED] Redirected to: "${replyText}"`);
+        }
+        
+        // Check if asking for complaint when already collected
+        if (d.complaint_title && /(kya|kaun|kaunsi)\s*(problem|complaint|dikkat|परेशानी|समस्या)|problem\s*bata|complaint\s*bata/.test(replyLower)) {
+            console.warn(`⚠️ [LOOP DETECTED] AI asking for complaint but already have: ${d.complaint_title}`);
+            // Override with smart redirect
+            if (!d.machine_status) {
+                replyText = "Complaint mil gayi. Machine band hai ya chal rahi hai?";
+            } else if (!d.city) {
+                replyText = "Theek hai. Aap kaunse shahar mein hain?";
+            } else if (!d.customer_phone) {
+                replyText = "Samajh gaya. Aapka phone number?";
+            } else {
+                replyText = "Sab details mil gayi. Save kar dun?";
+            }
+            console.log(`   ✅ [LOOP FIXED] Redirected to: "${replyText}"`);
+        }
+        
+        // Check if asking for city when already collected
+        if (d.city && /(kaunse|kaun|kis)\s*(shahar|city|शहर)|city\s*bata|shahar\s*bata/.test(replyLower)) {
+            console.warn(`⚠️ [LOOP DETECTED] AI asking for city but already have: ${d.city}`);
+            // Override with smart redirect
+            if (!d.customer_phone) {
+                replyText = "City mil gayi. Aapka phone number?";
+            } else {
+                replyText = "Sab details mil gayi. Confirm kar dun?";
+            }
+            console.log(`   ✅ [LOOP FIXED] Redirected to: "${replyText}"`);
+        }
+        
+        // Check if asking for phone when already collected
+        if (d.customer_phone && /(phone|mobile|number|नंबर|फोन)\s*(number|bata|kya|क्या)/.test(replyLower) && !/machine/.test(replyLower)) {
+            console.warn(`⚠️ [LOOP DETECTED] AI asking for phone but already have: ${d.customer_phone}`);
+            // Override with smart redirect
+            replyText = "Phone number mil gaya. Aur koi problem? Save kar dun?";
+            console.log(`   ✅ [LOOP FIXED] Redirected to: "${replyText}"`);
+        }
+        
+        // Check if asking for machine status when already collected
+        if (d.machine_status && /(band|chal\s*rahi|khadi|बंद|चल\s*रही)\s*(hai|है)/.test(replyLower) && /\?/.test(replyText)) {
+            console.warn(`⚠️ [LOOP DETECTED] AI asking for machine_status but already have: ${d.machine_status}`);
+            // Override with smart redirect
+            if (!d.city) {
+                replyText = "Status mil gaya. Aap kaunse shahar mein hain?";
+            } else if (!d.customer_phone) {
+                replyText = "Theek hai. Aapka phone number?";
+            } else {
+                replyText = "Sab details mil gayi. Save kar dun?";
+            }
+            console.log(`   ✅ [LOOP FIXED] Redirected to: "${replyText}"`);
+        }
 
         // Validate before marking ready
         if (readyToSubmit) {

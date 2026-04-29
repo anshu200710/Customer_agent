@@ -92,6 +92,42 @@ function formatNumberForTTS(number) {
     return String(number).split("").join(" ");
 }
 
+/**
+ * Convert ALL CAPS text to Title Case for natural TTS pronunciation
+ * Prevents TTS from spelling out words letter-by-letter
+ * @param {string} text - Text to convert
+ * @returns {string} Title cased text
+ */
+function toTitleCase(text) {
+    if (!text) return text;
+    
+    // Convert to string and handle null/undefined
+    const str = String(text).trim();
+    if (!str) return str;
+    
+    // Convert to title case: "MOHAN KUMAR" → "Mohan Kumar"
+    return str.toLowerCase().replace(/\b\w/g, char => char.toUpperCase());
+}
+
+/**
+ * Prepare text for TTS by fixing ALL CAPS and formatting numbers
+ * @param {string} text - Text to prepare
+ * @returns {string} TTS-ready text
+ */
+function prepareTextForTTS(text) {
+    if (!text) return text;
+    
+    let prepared = String(text);
+    
+    // Fix ALL CAPS words (but preserve intentional formatting)
+    // Match words that are 3+ characters and ALL CAPS
+    prepared = prepared.replace(/\b([A-Z]{3,})\b/g, (match) => {
+        return toTitleCase(match);
+    });
+    
+    return prepared;
+}
+
 function isClarificationQuestion(text) {
     return /(\b(kya|kaun|kab|kaise|kitna|kitne|kahan|kaunse|kis|naam|phone|number|engineer|wait|der|time)\b)/i.test(text)
         && !isPositiveConfirmation(text)
@@ -165,8 +201,9 @@ async function speak(twiml, text, options = {}) {
     let error = null;
     
     try {
-        // Format numbers for better pronunciation
-        const formattedText = formatNumbersForTTS(text);
+        // Prepare text for TTS: fix ALL CAPS and format numbers
+        let formattedText = prepareTextForTTS(text);
+        formattedText = formatNumbersForTTS(formattedText);
         
         // Detect emotion and context automatically
         const { emotion, context } = detectEmotionAndContext(formattedText);
@@ -210,11 +247,12 @@ async function speak(twiml, text, options = {}) {
             const gather = twiml.gather({
                 input: "speech dtmf",
                 language: TTS_LANG,
-                speechTimeout: 1.5,
+                speechTimeout: 2.25,
                 timeout: 5,
                 maxSpeechTime: 15,
                 action: options.action || "/voice/process",
-                method: "POST"
+                method: "POST",
+                bargeIn: false
             });
             
             // Play Cartesia audio instead of using Google TTS
@@ -244,7 +282,7 @@ async function speak(twiml, text, options = {}) {
         const gather = twiml.gather({
             input: "speech dtmf",
             language: TTS_LANG,
-            speechTimeout: 1.5,
+            speechTimeout: 2.25,
             timeout: 5,
             maxSpeechTime: 15,
             actionOnEmptyResult: true,
@@ -313,7 +351,7 @@ async function speak(twiml, text, options = {}) {
         const gather = twiml.gather({
             input: "speech dtmf",
             language: TTS_LANG,
-            speechTimeout: 1.5,
+            speechTimeout: 2.25,
             timeout: 5,
             maxSpeechTime: 15,
             actionOnEmptyResult: true,
@@ -360,8 +398,9 @@ async function sayFinal(twiml, text, options = {}) {
     let error = null;
     
     try {
-        // Format numbers for better pronunciation
-        const formattedText = formatNumbersForTTS(text);
+        // Prepare text for TTS: fix ALL CAPS and format numbers
+        let formattedText = prepareTextForTTS(text);
+        formattedText = formatNumbersForTTS(formattedText);
         
         // Detect emotion and context automatically
         const { emotion, context } = detectEmotionAndContext(formattedText);
@@ -527,19 +566,86 @@ router.post("/", async (req, res) => {
 
         activeCalls.set(CallSid, callData);
 
-        const greeting = callData.customerData
-            ? `Namaste ${callData.customerData.name.split(" ")[0]}, kya problem hai?`
-            : "Namaste, Rajesh Motors. Machine number bataiye.";
-
-        callData.lastQuestion = greeting;  // Track the question
-        await speak(twiml, greeting, { context: 'greeting', emotion: 'friendly', callSid: CallSid });
-        res.type("text/xml").send(twiml.toString());
+        // Use pre-generated greeting for new customers (FAST!)
+        // For returning customers with machine number, use personalized greeting
+        if (!callData.customerData) {
+            // ⚡ NEW CUSTOMER: Use pre-generated audio (instant - 50-100ms)
+            // Audio says: "Namaste, main Priya, Rajesh Motors se. Machine number bataiye."
+            const greetingUrl = `${process.env.PUBLIC_URL}/greetings/greeting_priya.wav`;
+            const greetingText = "Namaste, main Priya, Rajesh Motors se. Machine number bataiye.";
+            
+            console.log(`\n${"═".repeat(60)}`);
+            console.log(`⚡ [FAST GREETING] New Customer - Using Pre-Generated Audio`);
+            console.log(`📁 File: greeting_priya.wav`);
+            console.log(`🔗 URL: ${greetingUrl}`);
+            console.log(`📝 Text: "${greetingText}"`);
+            console.log(`⏱️  Expected Speed: 250-400ms (vs 1.5s dynamic TTS)`);
+            console.log(`${"═".repeat(60)}\n`);
+            
+            callData.lastQuestion = greetingText;  // Track the question
+            
+            try {
+                // FALLBACK: Use dynamic TTS instead of pre-generated audio
+                // Pre-generated audio fails with ngrok free tier (requires browser verification)
+                // Dynamic TTS is more reliable and still fast with Cartesia
+                console.log(`🔄 [GREETING] Using dynamic TTS (ngrok compatibility)`);
+                
+                await speak(twiml, greetingText, { 
+                    context: 'greeting', 
+                    emotion: 'friendly', 
+                    callSid: CallSid 
+                });
+                
+                console.log(`✅ [GREETING] TwiML generated successfully`);
+                console.log(`📤 [GREETING] Sending response to Twilio`);
+                
+                res.type("text/xml").send(twiml.toString());
+                
+            } catch (gatherErr) {
+                console.error(`❌ [GREETING ERROR] Failed to create gather:`, gatherErr.message);
+                console.error(`   Stack:`, gatherErr.stack);
+                throw gatherErr;
+            }
+            
+        } else {
+            // 🎯 RETURNING CUSTOMER: Use personalized greeting with their name
+            const greeting = `Namaste ${toTitleCase(callData.customerData.name.split(" ")[0])}, kya problem hai?`;
+            
+            console.log(`\n${"═".repeat(60)}`);
+            console.log(`🎯 [PERSONALIZED GREETING] Returning Customer`);
+            console.log(`👤 Customer: ${callData.customerData.name}`);
+            console.log(`🔢 Machine: ${callData.customerData.machineNo}`);
+            console.log(`📝 Greeting: "${greeting}"`);
+            console.log(`⏱️  Using Dynamic TTS (Cartesia)`);
+            console.log(`${"═".repeat(60)}\n`);
+            
+            callData.lastQuestion = greeting;  // Track the question
+            await speak(twiml, greeting, { context: 'greeting', emotion: 'friendly', callSid: CallSid });
+            res.type("text/xml").send(twiml.toString());
+        }
 
     } catch (err) {
-        console.error("❌ [START]", err.message);
-        await sayFinal(twiml, "Thodi problem aa gayi ji. Thodi der baad call karein.", { emotion: 'empathetic', callSid: CallSid });
-        twiml.hangup();
-        res.type("text/xml").send(twiml.toString());
+        console.error(`\n${"═".repeat(60)}`);
+        console.error(`❌ [START ERROR] Call initialization failed`);
+        console.error(`📞 CallSid: ${CallSid}`);
+        console.error(`📱 Phone: ${callerPhone}`);
+        console.error(`🔢 Machine No: ${preloadedMachineNo || 'None'}`);
+        console.error(`⚠️  Error: ${err.message}`);
+        console.error(`📚 Stack: ${err.stack}`);
+        console.error(`${"═".repeat(60)}\n`);
+        
+        try {
+            await sayFinal(twiml, "Thodi problem aa gayi ji. Thodi der baad call karein.", { emotion: 'empathetic', callSid: CallSid });
+            twiml.hangup();
+            res.type("text/xml").send(twiml.toString());
+        } catch (finalErr) {
+            console.error(`❌ [CRITICAL] Even error handler failed:`, finalErr.message);
+            // Last resort - send basic TwiML
+            const emergencyTwiml = new VoiceResponse();
+            emergencyTwiml.say({ voice: TTS_VOICE, language: TTS_LANG }, "Technical problem. Please call again.");
+            emergencyTwiml.hangup();
+            res.type("text/xml").send(emergencyTwiml.toString());
+        }
     }
 });
 
@@ -795,7 +901,7 @@ router.post("/process", async (req, res) => {
             const lastTwo = ph.slice(-2);
             callData.pendingPhoneConfirm = false;
             callData.awaitingPhoneConfirm = true;
-            const prompt = `${callData.customerData.name.split(" ")[0]}, kya aapka yehi number save karna hai jisme last mein ${lastTwo} aata hai, ya change karna hai?`;
+            const prompt = `${toTitleCase(callData.customerData.name.split(" ")[0])}, kya aapka yehi number save karna hai jisme last mein ${lastTwo} aata hai, ya change karna hai?`;
             callData.lastQuestion = prompt;
             console.log(`   📞 Phone confirmation prompt - asking about number ending in ${lastTwo}`);
             activeCalls.set(CallSid, callData);

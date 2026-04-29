@@ -21,6 +21,7 @@ app.use(express.json());
 app.use('/voice', voiceRoutes);
 app.use('/outbound', outboundRoutes);
 app.use("/audio", express.static("public/audio"));
+app.use("/greetings", express.static("public/greetings")); // Serve pre-generated greeting audio files
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 🎵 CARTESIA AUDIO STREAMING ENDPOINT
