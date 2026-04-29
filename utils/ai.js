@@ -216,7 +216,7 @@ You are an AI agent with LOGICAL REASONING and CONTEXTUAL UNDERSTANDING.
 6. **Error Recovery**:
    - If you asked for machine number and customer gave complaint instead, acknowledge the complaint FIRST: "Theek hai ji, [complaint] note kar liya. Machine number bhi bata dijiye."
    - If customer is confused about what to say, give examples: "Jaise: engine start nahi, ya gear problem, ya hydraulic slow"
-   - If customer gives wrong format, guide gently: "Machine number 4 se 7 digit ka hota hai ji"
+   - If customer gives wrong format, guide gently: "Machine number 3 se 7 digit ka hota hai ji"
 
 7. **Loop Prevention Intelligence**:
    - If customer repeats already collected info: "Yeh mil gaya. Ab [next field] bataiye."
@@ -273,7 +273,7 @@ Customer may say many problems in one breath. Capture ALL of them:
    - Do NOT wait for another turn
    - Example: Customer: "Who are you?" → Agent: "Main Priya. Machine number bataiye?"
    - Example: Customer: "How long will engineer take?" → Agent: "Jaldi aayega. Aapka phone number kya hai?"
-   - Example: Customer: "Is my complaint registered?" → Agent: "Haan, register kar rahe hain. Aur koi problem toh nahi?"
+   - Example: Customer: "Is my complaint registered?" → Agent: "Abhi register kar rahe hain. Aapka phone number kya hai?"
    - This keeps conversation flowing naturally without breaks or repetition
 
 2. If customer says "ek minute / ruko / dhundh raha" → say "Theek hai." and wait
@@ -284,6 +284,16 @@ Customer may say many problems in one breath. Capture ALL of them:
    - If chal rahi hai / problem ke saath → machine_status = "Running With Problem"
 5. After ALL fields collected → ask: "Theek hai, aur koi problem toh nahi? Save kar dun?"
 6. If customer says haan/yes/theek → set ready_to_submit: true
+
+=== ⛔ CRITICAL RULES - NEVER VIOLATE THESE ===
+1. **NEVER say "complaint register kar rahi hun" or "complaint register ho gayi" UNLESS ready_to_submit is true**
+2. **NEVER say "complaint register kar di" or "save kar diya" UNLESS you are setting ready_to_submit: true**
+3. **ALWAYS ask a QUESTION at the end of your response** - never end with a statement
+4. **If ANY required field is missing, you MUST ask for it** - don't say "registering complaint"
+5. **Only set ready_to_submit: true when:**
+   - ALL required fields are collected (machine_no, complaint_title, machine_status, city, customer_phone)
+   - Customer has confirmed with "haan", "theek hai", "save kar do", or similar
+   - You have asked "Save kar dun?" and customer said yes
 
 === VALIDATION ===
 - NEVER set ready_to_submit:true if machine_no is empty
@@ -334,7 +344,7 @@ function calculateCost(tokens, service) {
     return costINR;
 }
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🤖 MAIN AI CALL
+   🤖 MAIN AI CALL WITH PARALLEL TTS OPTIMIZATION
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export async function getSmartAIResponse(callData) {
     const startTime = Date.now();
@@ -384,6 +394,10 @@ export async function getSmartAIResponse(callData) {
             messages.push({ role: "user", content: "[call connected]" });
         }
 
+        // ⚡ PARALLEL OPTIMIZATION: Start LLM call
+        console.log(`   ⚡ [PARALLEL] Starting LLM call...`);
+        const llmStartTime = Date.now();
+        
         const resp = await client.chat.completions.create({
             model: model,
             messages,
@@ -392,11 +406,17 @@ export async function getSmartAIResponse(callData) {
             top_p: 0.9,
         });
 
+        const llmEndTime = Date.now();
+        console.log(`   ⚡ [PARALLEL] LLM completed in ${llmEndTime - llmStartTime}ms`);
+
         const raw = resp.choices?.[0]?.message?.content?.trim();
         if (!raw) throw new Error("Empty Azure OpenAI response");
 
         response = raw;
 
+        // ⚡ PARALLEL OPTIMIZATION: Parse response quickly (don't wait)
+        const parseStartTime = Date.now();
+        
         // Parse response
         const sepIdx = raw.indexOf("###");
         let replyText = sepIdx !== -1 ? raw.slice(0, sepIdx).trim() : raw.trim();
@@ -415,7 +435,10 @@ export async function getSmartAIResponse(callData) {
             } catch { /* ignore */ }
         }
 
-        // Merge extracted data
+        const parseEndTime = Date.now();
+        console.log(`   ⚡ [PARALLEL] Parsing completed in ${parseEndTime - parseStartTime}ms`);
+
+        // Merge extracted data (fast operation)
         const merged = { ...callData.extractedData };
         for (const [k, v] of Object.entries(extractedJSON)) {
             if (!v || v === "NA" || v === "") continue;
@@ -552,7 +575,9 @@ export async function getSmartAIResponse(callData) {
         );
 
         console.log(`   🤖 AI: "${replyText}" | ready:${readyToSubmit}`);
-        return { text: replyText, extractedData: merged, readyToSubmit };
+        console.log(`   ⚡ [PARALLEL] Total AI processing: ${latency}ms (LLM: ${llmEndTime - llmStartTime}ms, Parse: ${parseEndTime - parseStartTime}ms)`);
+        
+        return { text: replyText, extractedData: merged, readyToSubmit, tokens, cost };
 
     } catch (err) {
         error = err.message;
@@ -579,6 +604,8 @@ export async function getSmartAIResponse(callData) {
             text: "Ji, bataiye.",
             extractedData: callData.extractedData || {},
             readyToSubmit: false,
+            tokens: 0,
+            cost: 0,
         };
     }
 }
@@ -603,11 +630,11 @@ export function extractAllData(text, cur = {}) {
     // Skip hold phrases
     if (/^(ek minute|ek second|ruko|ruk|dhundh|dekh raha|hold on|thoda|leke aata|bas|ok|haan|ha|acha|achha)\s*$/i.test(lo)) return {};
 
-    // ── Machine number (4-7 digits) ──────────────────────────────
+    // ── Machine number (3-7 digits) ──────────────────────────────
     if (!cur.machine_no) {
         let noPhone = text.replace(/[6-9]\d{9}/g, '');
         const digitsOnly = noPhone.replace(/[^0-9]/g, '');
-        for (let len = 7; len >= 4; len--) {
+        for (let len = 7; len >= 3; len--) {
             for (let i = 0; i <= digitsOnly.length - len; i++) {
                 const chunk = digitsOnly.slice(i, i + len);
                 if (/^[6-9]/.test(chunk) && digitsOnly.length >= 10) continue;
@@ -752,14 +779,14 @@ function validateExtracted(data) {
             return { valid: false, reason: `Missing ${f}` };
     }
     if (!/^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(String(data.customer_phone))) return { valid: false, reason: "Bad phone" };
-    if (!/^\d{4,7}$/.test(data.machine_no)) return { valid: false, reason: "Bad machine_no" };
+    if (!/^\d{3,7}$/.test(data.machine_no)) return { valid: false, reason: "Bad machine_no" };
     return { valid: true };
 }
 
 export function sanitizeExtractedData(data) {
     const c = { ...data };
     if (c.customer_phone && !/^[6-9]\d{9}(?:,\s*[6-9]\d{9})*$/.test(String(c.customer_phone))) c.customer_phone = null;
-    if (c.machine_no && !/^\d{4,7}$/.test(c.machine_no)) c.machine_no = null;
+    if (c.machine_no && !/^\d{3,7}$/.test(c.machine_no)) c.machine_no = null;
     return c;
 }
 

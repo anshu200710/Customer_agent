@@ -20,7 +20,7 @@ const API_HEADERS = { JCBSERVICEAPI: "MakeInJcb" };
    🔍 CHECK: Are all required fields collected?
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function missingField(d) {
-    if (!d.machine_no || !/^\d{4,7}$/.test(d.machine_no)) return "machine_no";
+    if (!d.machine_no || !/^\d{3,7}$/.test(d.machine_no)) return "machine_no";
     if (!d.complaint_title) return "complaint_title";
     if (!d.machine_status) return "machine_status";
     if (!d.city || !d.city_id) return "city";
@@ -37,12 +37,28 @@ function getSmartSilencePrompt(callData) {
     // Check what's missing and ask for it specifically
     const missing = missingField(d);
     
-    // If we have a stored last question, use it
+    // If we have a stored last question, validate it's actually a question
     if (callData.lastQuestion) {
-        return callData.lastQuestion;
+        const lastQ = callData.lastQuestion.trim();
+        
+        // Don't reuse clarification questions (they cause loops)
+        if (/ya nahi boliye|cancel kar dun|haan boliye to/i.test(lastQ)) {
+            console.log(`   ⚠️ [SILENCE] Last question was clarification - not reusing`);
+            // If in final confirmation state and user is silent after clarification, just submit
+            if (callData.awaitingFinalConfirm && !missing) {
+                console.log(`   ✅ [SILENCE] All data collected, user silent after clarification - will submit on next input`);
+                return "Complaint save kar raha hun. Ek second.";
+            }
+            // Otherwise fall through to generate proper question
+        } else if (lastQ.includes("?") || /bataiye|boliye|chahiye|batao|bolo|dijiye|kya hai/i.test(lastQ)) {
+            // It's a proper question (not clarification) - reuse it
+            return lastQ;
+        }
+        // If it's a statement (like "complaint register kar rahi hun"), ignore it and generate proper question
+        console.log(`   ⚠️ [SILENCE] Last question was a statement, generating proper question`);
     }
     
-    // Otherwise, determine what to ask based on missing fields
+    // Determine what to ask based on missing fields
     if (missing === "machine_no") {
         return "Machine number bataiye.";
     }
@@ -77,11 +93,23 @@ function parsePhoneFromText(text) {
 }
 
 function isPositiveConfirmation(text) {
-    return /(\b(haan|ha|han|theek hai|thik hai|save|kar do|register|done|yes|bilkul|sahi hai|ok|okay|theek|chalo|hmm)\b)/i.test(text);
+    // Check English/transliterated patterns
+    const englishMatch = /(\b(haan|ha|han|theek hai|thik hai|save|kar do|register|done|yes|bilkul|sahi hai|ok|okay|theek|chalo|hmm)\b)/i.test(text);
+    
+    // Check Devanagari/Hindi patterns
+    const hindiMatch = /(हां|हाँ|हा|ठीक है|ठीक|कर दो|करो|करदो|सेव|रजिस्टर|बिल्कुल|सही है|चलो|हम्म|हूं|हु)/i.test(text);
+    
+    return englishMatch || hindiMatch;
 }
 
 function isNegativeConfirmation(text) {
-    return /(\b(nahi|nai|nahin|no|mat|band kar|ruk ja|ruk jai|ruk|nahin chahiye|don't|dont)\b)/i.test(text);
+    // Check English/transliterated patterns
+    const englishMatch = /(\b(nahi|nai|nahin|no|mat|band kar|ruk ja|ruk jai|ruk|nahin chahiye|don't|dont)\b)/i.test(text);
+    
+    // Check Devanagari/Hindi patterns
+    const hindiMatch = /(नहीं|नही|नै|ना|मत|बंद कर|रुक जा|रुक|नहीं चाहिए|रोको)/i.test(text);
+    
+    return englishMatch || hindiMatch;
 }
 
 function isAddMoreProblem(text) {
@@ -837,9 +865,24 @@ router.post("/process", async (req, res) => {
                 callData.extractedData.outlet = mc.city_name;
                 callData.extractedData.lat = mc.lat;
                 callData.extractedData.lng = mc.lng;
-                if (!callData.cityConfirmed) {
+                
+                // Only ask for confirmation if city and branch are different
+                // OR if user didn't explicitly mention the city (was inferred)
+                const cityExplicitlyMentioned = new RegExp(mc.city_name, 'i').test(userInput);
+                const cityAndBranchSame = mc.city_name === mc.branch_name;
+                
+                if (!callData.cityConfirmed && !cityExplicitlyMentioned && !cityAndBranchSame) {
+                    // City was inferred or branch is different - ask for confirmation
                     callData.pendingCityConfirm = true;
+                } else if (!callData.cityConfirmed && !cityAndBranchSame) {
+                    // City explicitly mentioned but branch is different - ask for confirmation
+                    callData.pendingCityConfirm = true;
+                } else {
+                    // City explicitly mentioned and matches branch - auto-confirm
+                    callData.cityConfirmed = true;
+                    console.log(`   ✅ City auto-confirmed (explicitly mentioned): ${mc.city_name}`);
                 }
+                
                 console.log(`   🗺️  ${mc.city_name} → ${mc.branch_name}`);
             }
         }
@@ -1124,7 +1167,7 @@ router.post("/process", async (req, res) => {
                 return await handleSubmit(callData, twiml, res, CallSid);
             }
 
-            const sideAnswer = answerSideQuestion(userInput);
+            const sideAnswer = answerSideQuestion(userInput, callData);
             if (sideAnswer && !isConfirming) {
                 console.log(`   💬 Side question during final confirm - answering and submitting`);
                 await sayFinal(twiml, sideAnswer, { emotion: 'professional' });
@@ -1133,14 +1176,37 @@ router.post("/process", async (req, res) => {
                 return await handleSubmit(callData, twiml, res, CallSid);
             }
 
-            if (!isConfirming && !wantsMore) {
-                console.log(`   ➡️  Ambiguous final response - proceeding to submit`);
-                callData.awaitingFinalConfirm = false;
+            // Check if response is truly ambiguous (very short AND no confirmation keywords)
+            const hasConfirmationKeywords = /haan|ha|yes|ok|theek|bilkul|sahi|हां|हाँ|हा|ठीक|बिल्कुल|सही/i.test(userInput);
+            const isVeryShort = userInput.length < 5;
+            const isTrulyAmbiguous = !isConfirming && !wantsMore && !hasConfirmationKeywords && (isVeryShort || userInput.length < 10);
+            
+            if (isTrulyAmbiguous) {
+                // Check if we already asked for clarification once
+                if (callData.clarificationAsked) {
+                    // Already asked once - user is confused or not responding clearly
+                    // They already gave all details, so just submit
+                    console.log(`   ✅ Already asked for clarification once - proceeding to submit`);
+                    console.log(`   📝 User input was: "${userInput}" - treating as implicit confirmation`);
+                    callData.awaitingFinalConfirm = false;
+                    activeCalls.set(CallSid, callData);
+                    return await handleSubmit(callData, twiml, res, CallSid);
+                }
+                
+                // First time - ask for clear confirmation
+                console.log(`   ⚠️  Ambiguous final response - asking for clear yes/no`);
+                console.log(`   📝 User input: "${userInput}" (${userInput.length} chars, no confirmation keywords)`);
+                callData.clarificationAsked = true;
+                const clarifyPrompt = "Haan boliye to complaint save kar dun, ya nahi boliye to cancel kar dun?";
+                callData.lastQuestion = clarifyPrompt;
                 activeCalls.set(CallSid, callData);
-                return await handleSubmit(callData, twiml, res, CallSid);
+                await speak(twiml, clarifyPrompt, { emotion: 'professional', callSid: CallSid });
+                return res.type("text/xml").send(twiml.toString());
             }
 
-            console.log(`   ✅ Final confirmation received - submitting complaint`);
+            // If we reach here, treat as implicit confirmation (has some confirmation keywords or reasonable length)
+            console.log(`   ✅ Final confirmation received (implicit) - submitting complaint`);
+            console.log(`   📝 User input: "${userInput}" - has confirmation keywords or reasonable response`);
             callData.awaitingFinalConfirm = false;
             activeCalls.set(CallSid, callData);
             return await handleSubmit(callData, twiml, res, CallSid);
@@ -1189,16 +1255,32 @@ router.post("/process", async (req, res) => {
         callData.lastAIResponse = aiResp.text;
         console.log(`   💬 AI Response: "${aiResp.text}"`);
         
+        // ⚡ PARALLEL OPTIMIZATION: Start validation and data merging
+        const validationStartTime = Date.now();
+        
         // Validate AI response quality - must have a question or clear instruction
         const isGoodResponse = aiResp.text && (
             aiResp.text.includes("?") || 
             aiResp.text.includes("bataiye") || 
             aiResp.text.includes("boliye") ||
             aiResp.text.includes("chahiye") ||
+            aiResp.text.includes("batao") ||
+            aiResp.text.includes("bolo") ||
+            aiResp.text.includes("dijiye") ||
             aiResp.text.length > 15
         );
         
-        if (!isGoodResponse) {
+        // Additional check: Don't allow "registering complaint" statements when fields are missing
+        const hasRegisteringStatement = /complaint\s+(register|save|kar\s+di|ho\s+gayi|kar\s+rahi)/i.test(aiResp.text);
+        const allFieldsCollected = !missingField(callData.extractedData) && machineValidated;
+        
+        if (hasRegisteringStatement && !allFieldsCollected) {
+            console.warn(`   ⚠️  AI said "registering complaint" but fields missing - blocking response`);
+            // FALLBACK: Use hardcoded smart prompt based on what's missing
+            const fallbackPrompt = getSmartSilencePrompt(callData);
+            aiResp.text = fallbackPrompt;
+            console.log(`   🔄 Using hardcoded fallback prompt: "${fallbackPrompt}"`);
+        } else if (!isGoodResponse) {
             console.warn(`   ⚠️  AI response validation failed - too short or unclear`);
             // FALLBACK: Use hardcoded smart prompt based on what's missing
             const fallbackPrompt = getSmartSilencePrompt(callData);
@@ -1211,7 +1293,7 @@ router.post("/process", async (req, res) => {
         // Track the question being asked
         callData.lastQuestion = aiResp.text;
 
-        // Merge AI-extracted data
+        // Merge AI-extracted data (fast operation - don't wait)
         if (aiResp.extractedData) {
             for (const [k, v] of Object.entries(aiResp.extractedData)) {
                 if (v && !callData.extractedData[k]) callData.extractedData[k] = v;
@@ -1229,6 +1311,9 @@ router.post("/process", async (req, res) => {
             }
         }
 
+        const validationEndTime = Date.now();
+        console.log(`   ⚡ [PARALLEL] Validation completed in ${validationEndTime - validationStartTime}ms`);
+
         // Check again after AI — but route through final confirm if now complete
         const stillMissing = missingField(callData.extractedData);
         if (!stillMissing && machineValidated) {
@@ -1237,7 +1322,10 @@ router.post("/process", async (req, res) => {
             callData.lastQuestion = finalQuestion;
             callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
             activeCalls.set(CallSid, callData);
-            await speak(twiml, finalQuestion, { emotion: 'professional' });
+            
+            // ⚡ PARALLEL: TTS will be called by speak() function
+            console.log(`   ⚡ [PARALLEL] Starting TTS generation for final question...`);
+            await speak(twiml, finalQuestion, { emotion: 'professional', callSid: CallSid });
             return res.type("text/xml").send(twiml.toString());
         }
 
@@ -1272,6 +1360,10 @@ router.post("/process", async (req, res) => {
         // Log turn completion
         serviceLogger.logTurn(CallSid);
         
+        // ⚡ PARALLEL: Start TTS generation immediately
+        console.log(`   ⚡ [PARALLEL] Starting TTS generation...`);
+        const ttsStartTime = Date.now();
+        
         // If we answered a side question, combine both responses
         if (sideQuestionAnswer) {
             console.log(`   📢 Combining side question answer + LLM response`);
@@ -1280,6 +1372,10 @@ router.post("/process", async (req, res) => {
         } else {
             await speak(twiml, aiResp.text, { emotion: 'professional', callSid: CallSid });
         }
+        
+        const ttsEndTime = Date.now();
+        console.log(`   ⚡ [PARALLEL] TTS completed in ${ttsEndTime - ttsStartTime}ms`);
+        console.log(`   ⚡ [PARALLEL] Total turn time: ${ttsEndTime - turnStartTime}ms`);
         
         // Complete turn timing
         performanceLogger.completeTurn(CallSid);
