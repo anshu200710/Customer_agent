@@ -1,3 +1,7 @@
+// ai.js - Legacy compatibility layer
+// Most logic moved to core/slot_engine.js and core/response_planner.js
+// This file kept for backward compatibility with existing imports
+
 import { AzureOpenAI } from "openai";
 import serviceLogger from "./service_logger.js";
 
@@ -789,5 +793,17 @@ export function sanitizeExtractedData(data) {
     if (c.machine_no && !/^\d{3,7}$/.test(c.machine_no)) c.machine_no = null;
     return c;
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//   🔄 MIGRATION NOTE
+//   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//   This file is kept for backward compatibility.
+//   New architecture uses:
+//   - core/conversation_engine.js (replaces state management)
+//   - core/slot_engine.js (replaces extractAllData)
+//   - core/response_planner.js (replaces getSmartAIResponse)
+//   - core/intent_classifier.js (fast intent detection)
+//   - humanization/filler_engine.js (natural speech)
+//   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export default { getSmartAIResponse, extractAllData, matchServiceCenter, sanitizeExtractedData };

@@ -322,15 +322,22 @@ function addEmotionTags(text, emotion, context) {
 
     let enhancedText = text;
 
-    // Check if text already has emotion tags
+    // Check if text already has emotion tags - CRITICAL FIX
     const hasExistingEmotionTags = /<emotion[^>]*>.*?<\/emotion>/i.test(text);
-    console.log(`🔍 Existing Emotion Tags: ${hasExistingEmotionTags ? 'YES - FOUND' : 'NO'}`);
+    console.log(`🔍 Existing Emotion Tags: ${hasExistingEmotionTags ? 'YES - SKIPPING WRAPPER' : 'NO'}`);
     
     if (hasExistingEmotionTags) {
-        console.log(`⚠️  [WARNING] Text already contains emotion tags - skipping emotion wrapper`);
-        enhancedText = text; // Don't add more emotion tags
-    } else {
-        // Add emotion wrapper based on emotion type
+        console.log(`⚠️  [SKIP] Text already contains emotion tags - returning as-is`);
+        // Add natural pauses only (safe to add always)
+        enhancedText = text.replace(/\. /g, '. <break time="0.3s"/> ');
+        enhancedText = enhancedText.replace(/\? /g, '? <break time="0.2s"/> ');
+        console.log(`📤 [FINAL OUTPUT] Enhanced Text: "${enhancedText}"`);
+        return enhancedText;
+    }
+
+    // Only add emotion wrapper if professional tone is NOT requested
+    // Professional = no emotion tags, natural speech
+    if (emotion !== 'professional') {
         console.log(`\n🔄 [STEP 1] Adding emotion wrapper for: ${emotion}`);
         switch (emotion) {
             case 'empathetic':
@@ -349,71 +356,16 @@ function addEmotionTags(text, emotion, context) {
                 enhancedText = `<emotion value="excited">${text}</emotion>`;
                 console.log(`   ✅ Applied excited wrapper`);
                 break;
-            case 'professional':
             default:
-                // Professional tone - no emotion tags, natural speech
                 console.log(`   ✅ Professional tone - no emotion wrapper added`);
                 break;
         }
-    }
-
-    console.log(`🔄 [STEP 2] Context-specific enhancements for: ${context}`);
-    
-    // Add context-specific enhancements (but avoid double-wrapping)
-    switch (context) {
-        case 'greeting':
-            if (text.includes('Namaste') || text.includes('namaste')) {
-                // Only add if not already wrapped
-                if (!hasExistingEmotionTags && emotion === 'professional') {
-                    enhancedText = enhancedText.replace(/(Namaste|namaste)/, '<emotion value="friendly">$1</emotion>');
-                    console.log(`   ✅ Enhanced greeting with friendly Namaste`);
-                } else {
-                    console.log(`   ⏭️  Skipped Namaste enhancement (already has emotion wrapper)`);
-                }
-            }
-            break;
-        
-        case 'complaint':
-            // Add empathetic tone for complaint collection (only if not already wrapped)
-            if (!hasExistingEmotionTags && emotion === 'professional') {
-                enhancedText = `<emotion value="empathetic">${text}</emotion>`;
-                console.log(`   ✅ Enhanced complaint with empathetic wrapper`);
-            } else {
-                console.log(`   ⏭️  Skipped complaint enhancement (already has emotion wrapper)`);
-            }
-            break;
-        
-        case 'confirmation':
-            // Add slight excitement for successful confirmations
-            if (text.includes('register kar di') || text.includes('save kar')) {
-                if (!hasExistingEmotionTags) {
-                    enhancedText = enhancedText.replace(/(register kar di|save kar)/, '<emotion value="satisfied">$1</emotion>');
-                    console.log(`   ✅ Enhanced confirmation with satisfaction`);
-                } else {
-                    console.log(`   ⏭️  Skipped confirmation enhancement (already has emotion wrapper)`);
-                }
-            }
-            break;
-        
-        case 'farewell':
-            // Warm farewell
-            if (text.includes('Dhanyavaad') || text.includes('dhanyavaad')) {
-                if (!hasExistingEmotionTags) {
-                    enhancedText = enhancedText.replace(/(Dhanyavaad|dhanyavaad)/, '<emotion value="grateful">$1</emotion>');
-                    console.log(`   ✅ Enhanced farewell with gratitude`);
-                } else {
-                    console.log(`   ⏭️  Skipped farewell enhancement (already has emotion wrapper)`);
-                }
-            }
-            break;
-            
-        default:
-            console.log(`   ⏭️  No context-specific enhancements for: ${context}`);
-            break;
+    } else {
+        console.log(`\n🔄 [STEP 1] Professional tone - skipping emotion wrapper`);
     }
 
     // Add natural pauses for better flow (safe to add always)
-    console.log(`\n🔄 [STEP 3] Adding natural pauses`);
+    console.log(`\n🔄 [STEP 2] Adding natural pauses`);
     const beforePauses = enhancedText;
     enhancedText = enhancedText.replace(/\. /g, '. <break time="0.3s"/> ');
     enhancedText = enhancedText.replace(/\? /g, '? <break time="0.2s"/> ');
@@ -429,10 +381,13 @@ function addEmotionTags(text, emotion, context) {
     // Final validation check
     const finalDoubleCheck = enhancedText.match(/<emotion[^>]*><emotion[^>]*>/g);
     if (finalDoubleCheck) {
-        console.log(`❌ [FINAL VALIDATION] Double emotion tags still present!`);
+        console.log(`❌ [FINAL VALIDATION] Double emotion tags detected - CRITICAL ERROR!`);
         finalDoubleCheck.forEach((match, i) => {
             console.log(`   ${i + 1}. "${match}"`);
         });
+        // Emergency fix: remove all emotion tags and return plain text
+        enhancedText = text;
+        console.log(`🚨 [EMERGENCY FIX] Returning plain text without emotion tags`);
     } else {
         console.log(`✅ [FINAL VALIDATION] No double emotion tags - output is clean`);
     }
