@@ -275,7 +275,7 @@ async function speak(twiml, text, options = {}) {
             const gather = twiml.gather({
                 input: "speech dtmf",
                 language: TTS_LANG,
-                speechTimeout: 2.25,
+                speechTimeout: 1,
                 timeout: 5,
                 maxSpeechTime: 15,
                 action: options.action || "/voice/process",
