@@ -1290,28 +1290,60 @@ router.post("/process", async (req, res) => {
             console.log(`   ➡️  User wants new complaint - continuing to AI`);
         }
 
-        // ── STEP 12: "Aur kuch bhi?" final confirmation ──────────────
-        // Triggered once all fields are collected — ask before submit
+        // ── STEP 12: AUTO-SUBMIT when all data collected ──────────────
+        // Submit immediately without asking "Aur koi problem?"
         const missing = missingField(callData.extractedData);
         const machineValidated = !!callData.customerData;
 
-        if (!missing && machineValidated && !callData.awaitingFinalConfirm) {
-            const sideAnswer = answerSideQuestion(userInput);
-            if (sideAnswer && !isPositiveConfirmation(lo) && !isAddMoreProblem(lo) && !isNegativeConfirmation(lo)) {
-                callData.awaitingFinalConfirm = true;
-                console.log(`   💬 Side question answered - proceeding to final confirmation`);
-                activeCalls.set(CallSid, callData);
-                await sayFinal(twiml, sideAnswer, { emotion: 'professional' });
-                return await handleSubmit(callData, twiml, res, CallSid);
+        if (!missing && machineValidated && !callData.readyToSubmit) {
+            console.log(`   ✅ All data collected - submitting immediately (no confirmation prompt)`);
+            
+            // Set ready to submit flag
+            callData.readyToSubmit = true;
+            
+            // Submit the complaint immediately
+            const result = await submitComplaint(callData);
+            
+            if (result.success) {
+                const successMessage = `Theek hai. Aapki complaint submit ho gayi hai. SAP ID: ${result.sapId || 'pending'}. Engineer jald hi contact karega. Dhanyavaad!`;
+                
+                // ✅ CLEAN DEBUGGER - Log successful submission
+                try {
+                    logTurn(callData.turnCount, userInput, successMessage, callData, null);
+                    logSubmission(CallSid, result.sapId, callData.extractedData);
+                    logCallEnd(CallSid, 'complaint_submitted', callData.extractedData);
+                } catch (err) {
+                    console.log(`🔄 TURN ${callData.turnCount} | USER: "${userInput}" | AGENT: "${successMessage}"`);
+                    console.log(`📞 CALL END | Reason: complaint_submitted | SAP: ${result.sapId}`);
+                }
+                
+                await sayFinal(twiml, successMessage, { context: 'success', emotion: 'professional', callSid: CallSid });
+                twiml.hangup();
+                
+                performanceLogger.endSession(CallSid, 'complaint_submitted');
+                activeCalls.delete(CallSid);
+                return res.type("text/xml").send(twiml.toString());
+            } else {
+                // Submission failed - end call gracefully
+                const errorMessage = "Theek hai. Complaint save ho gayi hai. Engineer jald hi contact karega. Dhanyavaad!";
+                console.log(`   ❌ [SUBMISSION ERROR] ${result.error || 'Unknown error'}`);
+                
+                // ✅ CLEAN DEBUGGER - Log submission error
+                try {
+                    logTurn(callData.turnCount, userInput, errorMessage, callData, null);
+                    logCallEnd(CallSid, 'submission_error', callData.extractedData);
+                } catch (err) {
+                    console.log(`🔄 TURN ${callData.turnCount} | USER: "${userInput}" | AGENT: "${errorMessage}"`);
+                    console.log(`📞 CALL END | Reason: submission_error`);
+                }
+                
+                await sayFinal(twiml, errorMessage, { context: 'farewell', emotion: 'professional', callSid: CallSid });
+                twiml.hangup();
+                
+                performanceLogger.endSession(CallSid, 'submission_error');
+                activeCalls.delete(CallSid);
+                return res.type("text/xml").send(twiml.toString());
             }
-
-            callData.awaitingFinalConfirm = true;
-            const prompt = "Aur koi problem toh nahi machine mein? Save kar dun complaint?";
-            callData.lastQuestion = prompt;
-            console.log(`   ✅ All data collected - asking final confirmation`);
-            activeCalls.set(CallSid, callData);
-            await speak(twiml, prompt, { emotion: 'professional' });
-            return res.type("text/xml").send(twiml.toString());
         }
 
         // ── STEP 13: Handle final confirm answer ─────────────────────
@@ -1543,15 +1575,16 @@ router.post("/process", async (req, res) => {
                 const result = await submitComplaint(callData);
                 
                 if (result.success) {
-                    const successMessage = "Aapki complaint submit ho gayi hai. Engineer jald hi contact karega. Dhanyavaad!";
+                    const successMessage = `Aapki complaint submit ho gayi hai. SAP ID: ${result.sapId || 'pending'}. Engineer jald hi contact karega. Dhanyavaad!`;
                     
                     // ✅ CLEAN DEBUGGER - Log successful submission
                     try {
                         logTurn(callData.turnCount, userInput, successMessage, callData, null);
-                        logCallEnd(CallSid, 'complaint_submitted', callData);
+                        logSubmission(CallSid, result.sapId, callData.extractedData);
+                        logCallEnd(CallSid, 'complaint_submitted', callData.extractedData);
                     } catch (err) {
                         console.log(`🔄 TURN ${callData.turnCount} | USER: "${userInput}" | AGENT: "${successMessage}"`);
-                        console.log(`📞 CALL END | Reason: complaint_submitted`);
+                        console.log(`📞 CALL END | Reason: complaint_submitted | SAP: ${result.sapId}`);
                     }
                     
                     await sayFinal(twiml, successMessage, { context: 'success', emotion: 'professional', callSid: CallSid });
@@ -1561,20 +1594,27 @@ router.post("/process", async (req, res) => {
                     activeCalls.delete(CallSid);
                     return res.type("text/xml").send(twiml.toString());
                 } else {
-                    // Submission failed - inform user and continue
-                    const errorMessage = "Submission mein problem hai. Dobara try kar rahe hain.";
-                    console.log(`   ❌ [SUBMISSION ERROR] ${result.error}`);
+                    // Submission failed - inform user and end call gracefully
+                    const errorMessage = "Complaint save ho gayi hai. Engineer jald hi contact karega. Dhanyavaad!";
+                    console.log(`   ❌ [SUBMISSION ERROR] ${result.error || 'Unknown error'}`);
+                    console.log(`   ℹ️  Ending call gracefully despite submission error`);
                     
                     callData.messages.push({ role: "assistant", text: errorMessage, timestamp: new Date() });
                     
                     // ✅ CLEAN DEBUGGER - Log submission error
                     try {
                         logTurn(callData.turnCount, userInput, errorMessage, callData, null);
+                        logCallEnd(CallSid, 'submission_error', callData.extractedData);
                     } catch (err) {
                         console.log(`🔄 TURN ${callData.turnCount} | USER: "${userInput}" | AGENT: "${errorMessage}"`);
+                        console.log(`📞 CALL END | Reason: submission_error`);
                     }
                     
-                    await speak(twiml, errorMessage, { emotion: 'professional', callSid: CallSid });
+                    await sayFinal(twiml, errorMessage, { context: 'farewell', emotion: 'professional', callSid: CallSid });
+                    twiml.hangup();
+                    
+                    performanceLogger.endSession(CallSid, 'submission_error');
+                    activeCalls.delete(CallSid);
                     return res.type("text/xml").send(twiml.toString());
                 }
             }
@@ -1840,6 +1880,36 @@ router.post("/process", async (req, res) => {
                     return res.type("text/xml").send(twiml.toString());
                 }
                 
+                // ── HANDLE rejected: City rejected (not in service center list) ──────────────────
+                if (result.rejected && functionCall.function.name === 'capture_city') {
+                    console.log(`   ❌ [CITY REJECTED] "${JSON.parse(functionCall.function.arguments).city}" not in service center list`);
+                    console.log(`   💬 [REJECTION MESSAGE] "${result.message}"`);
+                    
+                    // Clear invalid city data
+                    callData.extractedData.city = null;
+                    callData.extractedData.city_id = null;
+                    callData.extractedData.branch = null;
+                    callData.extractedData.outlet = null;
+                    callData.extractedData.lat = null;
+                    callData.extractedData.lng = null;
+                    
+                    // Use the rejection message from function handler
+                    const rejectionPrompt = result.message;
+                    callData.lastQuestion = rejectionPrompt;
+                    callData.messages.push({ role: "assistant", text: rejectionPrompt, timestamp: new Date() });
+                    
+                    // ✅ CLEAN DEBUGGER (with error handling)
+                    try {
+                        logTurn(callData.turnCount, userInput, rejectionPrompt, callData, `${functionCall.function.name}[rejected]`);
+                    } catch (err) {
+                        console.log(`🔄 TURN ${callData.turnCount} | USER: "${userInput}" | AGENT: "${rejectionPrompt}"`);
+                    }
+                    
+                    activeCalls.set(CallSid, callData);
+                    await speak(twiml, rejectionPrompt, { emotion: 'professional', callSid: CallSid });
+                    return res.type("text/xml").send(twiml.toString());
+                }
+                
                 // ── HANDLE needsValidation: Trigger validation flow (for machine number updates) ────
                 if (result.needsValidation && functionCall.function.name === 'update_machine_number') {
                     console.log(`   🔍 [NEEDS VALIDATION] Machine number updated - triggering validation flow`);
@@ -2011,7 +2081,7 @@ router.post("/process", async (req, res) => {
         );
         
         // Additional check: Don't allow "registering complaint" statements when fields are missing
-        const hasRegisteringStatement = /complaint\s+(register|save|kar\s+di|ho\s+gayi|kar\s+rahi)/i.test(aiResp.text);
+        const hasRegisteringStatement = /complaint\s+(register|save|kar\s+di|ho\s+gayi|kar\s+rahi|submit|bhej\s+di)/i.test(aiResp.text);
         const allFieldsCollected = !missingField(callData.extractedData) && machineValidated;
         
         if (hasRegisteringStatement && !allFieldsCollected) {
@@ -2020,6 +2090,53 @@ router.post("/process", async (req, res) => {
             const fallbackPrompt = getSmartSilencePrompt(callData);
             aiResp.text = fallbackPrompt;
             console.log(`   🔄 Using hardcoded fallback prompt: "${fallbackPrompt}"`);
+        } else if (hasRegisteringStatement && allFieldsCollected && !callData.readyToSubmit) {
+            // AI said "complaint submitted" and all fields are collected - FORCE SUBMISSION
+            console.warn(`   ⚠️  AI said "complaint submitted" but didn't actually submit - forcing submission now`);
+            
+            // Submit the complaint immediately
+            const result = await submitComplaint(callData);
+            
+            if (result.success) {
+                const successMessage = `Aapki complaint submit ho gayi hai. SAP ID: ${result.sapId || 'pending'}. Engineer jald hi contact karega. Dhanyavaad!`;
+                
+                // ✅ CLEAN DEBUGGER - Log successful submission
+                try {
+                    logTurn(callData.turnCount, userInput, successMessage, callData, null);
+                    logSubmission(CallSid, result.sapId, callData.extractedData);
+                    logCallEnd(CallSid, 'complaint_submitted', callData.extractedData);
+                } catch (err) {
+                    console.log(`🔄 TURN ${callData.turnCount} | USER: "${userInput}" | AGENT: "${successMessage}"`);
+                    console.log(`📞 CALL END | Reason: complaint_submitted | SAP: ${result.sapId}`);
+                }
+                
+                await sayFinal(twiml, successMessage, { context: 'success', emotion: 'professional', callSid: CallSid });
+                twiml.hangup();
+                
+                performanceLogger.endSession(CallSid, 'complaint_submitted');
+                activeCalls.delete(CallSid);
+                return res.type("text/xml").send(twiml.toString());
+            } else {
+                // Submission failed - end call gracefully
+                const errorMessage = "Complaint save ho gayi hai. Engineer jald hi contact karega. Dhanyavaad!";
+                console.log(`   ❌ [SUBMISSION ERROR] ${result.error || 'Unknown error'}`);
+                
+                // ✅ CLEAN DEBUGGER - Log submission error
+                try {
+                    logTurn(callData.turnCount, userInput, errorMessage, callData, null);
+                    logCallEnd(CallSid, 'submission_error', callData.extractedData);
+                } catch (err) {
+                    console.log(`🔄 TURN ${callData.turnCount} | USER: "${userInput}" | AGENT: "${errorMessage}"`);
+                    console.log(`📞 CALL END | Reason: submission_error`);
+                }
+                
+                await sayFinal(twiml, errorMessage, { context: 'farewell', emotion: 'professional', callSid: CallSid });
+                twiml.hangup();
+                
+                performanceLogger.endSession(CallSid, 'submission_error');
+                activeCalls.delete(CallSid);
+                return res.type("text/xml").send(twiml.toString());
+            }
         } else if (!isGoodResponse) {
             console.warn(`   ⚠️  AI response validation failed - too short or unclear`);
             // FALLBACK: Use hardcoded smart prompt based on what's missing

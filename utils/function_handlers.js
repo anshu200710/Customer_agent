@@ -214,7 +214,57 @@ async function handleCaptureMachineStatus(args, callData) {
 async function handleCaptureCity(args, callData) {
     const { city } = args;
     
-    // Try to match service center
+    // CRITICAL: Validate against machine's registered city if available
+    if (callData.customerData && callData.customerData.city) {
+        const registeredCity = callData.customerData.city.toUpperCase();
+        const inputCity = city.toUpperCase();
+        
+        // Check if input matches registered city (exact or partial match)
+        if (registeredCity.includes(inputCity) || inputCity.includes(registeredCity)) {
+            // Match found - use registered city data
+            const matched = matchServiceCenter(registeredCity);
+            if (matched) {
+                callData.extractedData.city = matched.city_name;
+                callData.extractedData.city_id = matched.branch_code;
+                callData.extractedData.branch = matched.branch_name;
+                callData.extractedData.outlet = matched.city_name;
+                callData.extractedData.lat = matched.lat;
+                callData.extractedData.lng = matched.lng;
+                
+                console.log(`   ✅ [CAPTURED] city: ${matched.city_name} (validated against machine data)`);
+                
+                return {
+                    success: true,
+                    message: `City validated: ${matched.city_name} matches machine registration.`
+                };
+            }
+        } else {
+            // Input doesn't match registered city - warn but allow
+            console.warn(`   ⚠️  City mismatch: User said "${city}" but machine registered in "${registeredCity}"`);
+            console.warn(`   ℹ️  Using registered city from machine data`);
+            
+            // Use registered city instead
+            const matched = matchServiceCenter(registeredCity);
+            if (matched) {
+                callData.extractedData.city = matched.city_name;
+                callData.extractedData.city_id = matched.branch_code;
+                callData.extractedData.branch = matched.branch_name;
+                callData.extractedData.outlet = matched.city_name;
+                callData.extractedData.lat = matched.lat;
+                callData.extractedData.lng = matched.lng;
+                
+                console.log(`   ✅ [CAPTURED] city: ${matched.city_name} (from machine registration, ignoring user input)`);
+                
+                return {
+                    success: true,
+                    needsConfirmation: true,
+                    message: `Machine is registered in ${matched.city_name}. Using registered city instead of "${city}".`
+                };
+            }
+        }
+    }
+    
+    // No machine data or validation failed - STRICT: Only accept valid service center cities
     const matched = matchServiceCenter(city);
     
     if (matched) {
@@ -233,14 +283,13 @@ async function handleCaptureCity(args, callData) {
             message: `City captured: ${matched.city_name}. Nearest branch: ${matched.branch_name}`
         };
     } else {
-        // Store raw city even if not matched (will ask for confirmation)
-        callData.extractedData.city = city.toUpperCase();
-        
-        console.warn(`   ⚠️  City not matched in service centers: ${city}`);
+        // STRICT REJECTION: City not in service center list
+        console.warn(`   ❌ [CITY REJECTED] "${city}" not in service center list`);
         
         return {
             success: false,
-            message: `City '${city}' not found in service center list. Please ask customer to provide nearest city from: Jaipur, Kota, Ajmer, Udaipur, Bhilwara, Alwar, Sikar.`
+            rejected: true,
+            message: `"${city}" hamare service center mein nahi aati. Kripya Rajasthan ki sahi city bataiye jahan se service engineer aate hain. Jaise: Jaipur, Kota, Ajmer, Udaipur, Bhilwara, Alwar, Sikar.`
         };
     }
 }
