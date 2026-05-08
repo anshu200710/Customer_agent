@@ -137,10 +137,13 @@ function isPositiveConfirmation(text) {
     // Check English/transliterated patterns
     const englishMatch = /(\b(haan|ha|han|theek hai|thik hai|save|kar do|register|done|yes|bilkul|sahi hai|ok|okay|theek|chalo|hmm)\b)/i.test(text);
     
+    // Check specific confirmation phrases that should trigger immediate submission
+    const confirmationPhrases = /(save kar d[ou]|kar d[ou]|bhej d[ou]|submit kar d[ou]|haan save kar d[ou]|haan kar d[ou]|thik hai bhej d[ou]|theek hai bhej d[ou]|save kar dun|kar dun|bhej dun|submit kar dun)/i.test(text);
+    
     // Check Devanagari/Hindi patterns
     const hindiMatch = /(हां|हाँ|हा|ठीक है|ठीक|कर दो|करो|करदो|सेव|रजिस्टर|बिल्कुल|सही है|चलो|हम्म|हूं|हु)/i.test(text);
     
-    return englishMatch || hindiMatch;
+    return englishMatch || hindiMatch || confirmationPhrases;
 }
 
 function isNegativeConfirmation(text) {
@@ -1522,7 +1525,61 @@ router.post("/process", async (req, res) => {
                 return res.type("text/xml").send(twiml.toString());
             }
             
-            // For everything else (corrections, side questions, confirmations), clear the flag
+            // Handle positive confirmation - immediate submission
+            if (isConfirming && !wantsMore && !addingMore.length) {
+                console.log(`   ✅ [FINAL CONFIRM] Positive confirmation detected - proceeding with submission`);
+                console.log(`   📝 User said: "${userInput}"`);
+                
+                // Clear final confirmation flag
+                callData.awaitingFinalConfirm = false;
+                
+                // Set ready to submit flag
+                callData.readyToSubmit = true;
+                
+                // Add confirmation message to conversation
+                callData.messages.push({ role: "user", text: userInput, timestamp: new Date() });
+                
+                // Submit the complaint
+                const result = await submitComplaint(callData);
+                
+                if (result.success) {
+                    const successMessage = "Aapki complaint submit ho gayi hai. Engineer jald hi contact karega. Dhanyavaad!";
+                    
+                    // ✅ CLEAN DEBUGGER - Log successful submission
+                    try {
+                        logTurn(callData.turnCount, userInput, successMessage, callData, null);
+                        logCallEnd(CallSid, 'complaint_submitted', callData);
+                    } catch (err) {
+                        console.log(`🔄 TURN ${callData.turnCount} | USER: "${userInput}" | AGENT: "${successMessage}"`);
+                        console.log(`📞 CALL END | Reason: complaint_submitted`);
+                    }
+                    
+                    await sayFinal(twiml, successMessage, { context: 'success', emotion: 'professional', callSid: CallSid });
+                    twiml.hangup();
+                    
+                    performanceLogger.endSession(CallSid, 'complaint_submitted');
+                    activeCalls.delete(CallSid);
+                    return res.type("text/xml").send(twiml.toString());
+                } else {
+                    // Submission failed - inform user and continue
+                    const errorMessage = "Submission mein problem hai. Dobara try kar rahe hain.";
+                    console.log(`   ❌ [SUBMISSION ERROR] ${result.error}`);
+                    
+                    callData.messages.push({ role: "assistant", text: errorMessage, timestamp: new Date() });
+                    
+                    // ✅ CLEAN DEBUGGER - Log submission error
+                    try {
+                        logTurn(callData.turnCount, userInput, errorMessage, callData, null);
+                    } catch (err) {
+                        console.log(`🔄 TURN ${callData.turnCount} | USER: "${userInput}" | AGENT: "${errorMessage}"`);
+                    }
+                    
+                    await speak(twiml, errorMessage, { emotion: 'professional', callSid: CallSid });
+                    return res.type("text/xml").send(twiml.toString());
+                }
+            }
+            
+            // For everything else (corrections, side questions, etc.), clear the flag
             // and let LLM handle it through function calls
             console.log(`   🤖 [FINAL CONFIRM] Passing to LLM for intelligent handling`);
             callData.awaitingFinalConfirm = false;

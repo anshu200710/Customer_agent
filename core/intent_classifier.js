@@ -67,7 +67,8 @@ export class IntentClassifier {
   
   static matchesAffirmation(lo) {
     return /^(haan|han|ha|yes|theek|bilkul|sahi|ok|okay)\b/.test(lo)
-      || /\b(haan|theek hai|bilkul|save kar do|kar do|register kar do)\s*$/.test(lo);
+      || /\b(haan|theek hai|bilkul|save kar do|kar do|register kar do|bhej do|submit kar do|thik hai bhej do|haan save kar do|haan kar do)\s*$/.test(lo)
+      || /(save kar d[ou]|kar d[ou]|bhej d[ou]|submit kar d[ou]|thik hai|theek hai)/i.test(lo);
   }
   
   static matchesProblemDescription(lo) {
