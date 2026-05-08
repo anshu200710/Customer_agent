@@ -29,15 +29,15 @@ app.use("/greetings", express.static("public/greetings")); // Serve pre-generate
 app.get('/stream-audio/:audioId', (req, res) => {
     const { audioId } = req.params;
     
-    console.log(`🎵 [AUDIO STREAM] Request for audio: ${audioId}`);
-    console.log(`   🌐 User-Agent: ${req.get('User-Agent') || 'Unknown'}`);
-    console.log(`   📍 IP: ${req.ip || req.connection.remoteAddress}`);
+    // console.log(`🎵 [AUDIO STREAM] Request for audio: ${audioId}`);
+    // console.log(`   🌐 User-Agent: ${req.get('User-Agent') || 'Unknown'}`);
+    // console.log(`   📍 IP: ${req.ip || req.connection.remoteAddress}`);
     
     // Retrieve audio from cache
     const audioData = audioCache.get(audioId);
     
     if (!audioData) {
-        console.log(`❌ [AUDIO STREAM] Audio not found: ${audioId}`);
+        // console.log(`❌ [AUDIO STREAM] Audio not found: ${audioId}`);
         return res.status(404).json({
             error: 'Audio not found',
             message: 'The requested audio file does not exist or has expired'
@@ -46,11 +46,11 @@ app.get('/stream-audio/:audioId', (req, res) => {
     
     const { buffer, metadata } = audioData;
     
-    console.log(`✅ [AUDIO STREAM] Serving audio: ${audioId}`);
-    console.log(`   📊 Size: ${buffer.length} bytes (${(buffer.length / 1024).toFixed(1)}KB)`);
-    console.log(`   🎭 Voice: ${metadata.voice}`);
-    console.log(`   ⏱️  Duration: ${metadata.duration?.toFixed(2) || 'unknown'}s`);
-    console.log(`   📝 Text: "${(metadata.text || '').substring(0, 50)}${metadata.text && metadata.text.length > 50 ? '...' : ''}"`);
+    // console.log(`✅ [AUDIO STREAM] Serving audio: ${audioId}`);
+    // console.log(`   📊 Size: ${buffer.length} bytes (${(buffer.length / 1024).toFixed(1)}KB)`);
+    // console.log(`   🎭 Voice: ${metadata.voice}`);
+    // console.log(`   ⏱️  Duration: ${metadata.duration?.toFixed(2) || 'unknown'}s`);
+    // console.log(`   📝 Text: "${(metadata.text || '').substring(0, 50)}${metadata.text && metadata.text.length > 50 ? '...' : ''}"`);
     
     // Set appropriate headers for WAV audio
     res.set({
@@ -66,7 +66,7 @@ app.get('/stream-audio/:audioId', (req, res) => {
     // Handle range requests for audio streaming
     const range = req.get('Range');
     if (range) {
-        console.log(`📡 [AUDIO STREAM] Range request: ${range}`);
+        // console.log(`📡 [AUDIO STREAM] Range request: ${range}`);
         
         const parts = range.replace(/bytes=/, "").split("-");
         const start = parseInt(parts[0], 10);
@@ -74,7 +74,7 @@ app.get('/stream-audio/:audioId', (req, res) => {
         const chunksize = (end - start) + 1;
         
         if (start >= buffer.length || end >= buffer.length) {
-            console.log(`❌ [AUDIO STREAM] Invalid range: ${start}-${end} (size: ${buffer.length})`);
+            // console.log(`❌ [AUDIO STREAM] Invalid range: ${start}-${end} (size: ${buffer.length})`);
             return res.status(416).send('Requested Range Not Satisfiable');
         }
         
@@ -86,11 +86,11 @@ app.get('/stream-audio/:audioId', (req, res) => {
             'Content-Length': chunksize
         });
         
-        console.log(`📡 [AUDIO STREAM] Serving range: ${start}-${end}/${buffer.length} (${chunksize} bytes)`);
+        // console.log(`📡 [AUDIO STREAM] Serving range: ${start}-${end}/${buffer.length} (${chunksize} bytes)`);
         res.end(chunk);
     } else {
         // Serve complete file
-        console.log(`📡 [AUDIO STREAM] Serving complete file (${buffer.length} bytes)`);
+        // console.log(`📡 [AUDIO STREAM] Serving complete file (${buffer.length} bytes)`);
         res.end(buffer);
     }
 });

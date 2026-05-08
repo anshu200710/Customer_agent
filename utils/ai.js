@@ -4,12 +4,18 @@
 
 import { AzureOpenAI } from "openai";
 import serviceLogger from "./service_logger.js";
+import { getPhase1Functions, getPhase2Functions, getPhase3Functions, getPhase4Functions, getPhase5Functions } from "./function_definitions.js";
+import { buildDynamicPrompt } from "./dynamic_prompt_builder.js";
+import { initializeStateTracking, updateState, determineCurrentState } from "./state_manager.js";
 
 const client = new AzureOpenAI({
     apiKey: process.env.AZURE_OPENAI_API_KEY,
     apiVersion: process.env.AZURE_OPENAI_API_VERSION || "2024-02-15-preview",
     endpoint: process.env.AZURE_OPENAI_ENDPOINT,
 });
+
+// Feature flag for function calling
+const USE_FUNCTION_CALLING = process.env.USE_FUNCTION_CALLING === 'true';
 
 export const SERVICE_CENTERS = [
     { id: 1, city_name: "AJMER", branch_name: "AJMER", branch_code: "1", lat: 26.43488884, lng: 74.698112488 },
@@ -61,7 +67,13 @@ export const SERVICE_CENTERS = [
 ];
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🧠 SYSTEM PROMPT
+   🧠 SYSTEM PROMPT (DEPRECATED - Kept for backward compatibility)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   
+   ⚠️ DEPRECATED: This function is no longer used.
+   The system now uses dynamic_prompt_builder.js for state-based prompting.
+   This function is kept only for backward compatibility.
+   
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function buildSystemPrompt(callData) {
     const d = callData.extractedData;
@@ -154,7 +166,171 @@ function buildSystemPrompt(callData) {
     const turnNumber = callData.turnCount || 0;
     const machineAttempts = callData.machineNumberAttempts || 0;
 
+    // Function calling guidance
+    const functionGuidance = USE_FUNCTION_CALLING ? `
+
+=== 🔧 FUNCTION CALLING TOOLS (20 AVAILABLE) ===
+
+**YOU HAVE ACCESS TO 20 SPECIALIZED TOOLS - USE THEM!**
+
+**Phase 1 - Data Capture (5 tools):**
+• capture_machine_number → When customer provides machine/chassis number
+• capture_complaint → When customer describes problem
+• capture_machine_status → When customer says band (Breakdown) or chal rahi (Running)
+• capture_city → When customer mentions city/location
+• capture_phone_number → When customer provides 10-digit phone
+
+**Phase 2 - Update/Correction (5 tools):**
+• update_machine_number → When customer corrects machine number
+• update_complaint → When customer corrects complaint
+• update_city → When customer corrects city
+• update_phone_number → When customer corrects phone
+• update_machine_status → When customer corrects status
+
+**Phase 3 - Confirmations (4 tools):**
+• confirm_phone_number → Confirm registered phone
+• provide_alternate_phone → Customer provides alternate phone
+• confirm_city_and_branch → Confirm city and service branch
+• final_confirmation → Final confirmation before submission
+
+**Phase 4 - Validation (3 tools):**
+• validate_machine_number → Check if machine exists in database
+• validate_phone_format → Check phone number format
+• validate_city → Check if city is in service area
+
+**Phase 5 - Complaint Management (3 tools):**
+• add_additional_complaint → Customer mentions more problems
+• handle_existing_complaint → Customer has existing complaint
+• submit_complaint → Final submission after confirmation
+
+**WHEN TO USE FUNCTIONS:**
+✅ Customer: "Machine number 12345 hai" → Call capture_machine_number(machine_no="12345")
+✅ Customer: "Engine start nahi" → Call capture_complaint(complaint_title="Engine Not Starting")
+✅ Customer: "Machine band hai" → Call capture_machine_status(machine_status="Breakdown")
+✅ Customer: "Jaipur mein hun" → Call capture_city(city="JAIPUR")
+✅ Customer: "9876543210" → Call capture_phone_number(customer_phone="9876543210")
+✅ Customer: "Aur brake bhi kharab" → Call add_additional_complaint(additional_complaint="Brake Failure")
+✅ Customer: "Nahi, 54321 hai" → Call update_machine_number(new_machine_no="54321")
+✅ Customer: "Haan save kar do" → Call final_confirmation + submit_complaint
+
+**WORKFLOW:**
+1. Customer provides data → Call capture_* function
+2. After capture → Call validate_* function (if needed)
+3. Customer corrects → Call update_* function
+4. Customer adds more → Call add_additional_complaint
+5. Customer confirms → Call confirm_* or final_confirmation
+6. Final step → Call submit_complaint
+
+**CRITICAL RULES:**
+• ALWAYS use functions when customer provides data - don't just extract to JSON
+• Call validate_* after capturing machine_no, phone, city
+• Use update_* for corrections, not capture again
+• Use add_additional_complaint for multiple problems
+• Call submit_complaint ONLY after final_confirmation
+• Functions work WITH the JSON extraction, not instead of it
+` : '';
+
+    // Build function execution log
+    const functionLog = callData.functionExecutionLog || [];
+    const recentFunctions = functionLog.slice(-10); // Last 10 function calls
+    
+    const functionLogText = recentFunctions.length > 0 ? `
+
+=== 📋 FUNCTION EXECUTION LOG (LAST ${recentFunctions.length} CALLS) ===
+${recentFunctions.map((f) => {
+    const args = typeof f.arguments === 'string' ? f.arguments : JSON.stringify(f.arguments);
+    const status = f.result === 'success' ? '✅' : '❌';
+    return `${status} Turn ${f.turn}: ${f.name}(${args.substring(0, 50)}${args.length > 50 ? '...' : ''})`;
+}).join('\n')}
+
+**🚫 CRITICAL - DO NOT REPEAT THESE FUNCTION CALLS:**
+${recentFunctions.map((f) => `• NEVER call ${f.name} again (already executed in turn ${f.turn})`).join('\n')}
+
+**EXCEPTION:** Only call these functions again if:
+1. Customer explicitly says they made a mistake and wants to correct the data
+2. Customer provides NEW/DIFFERENT data for the same field
+3. You are using an UPDATE function (update_machine_number, update_complaint, etc.)
+
+**IF CUSTOMER SAYS "यही कर दो" / "save kar do" / "theek hai":**
+- This means customer is CONFIRMING what was already discussed
+- Do NOT call capture_* functions again
+- Move to the NEXT missing field or final confirmation
+` : '';
+
+    // Build pending actions
+    const pendingActions = [];
+    if (callData.pendingPhoneConfirm || callData.awaitingPhoneConfirm) {
+        pendingActions.push('⏳ Phone confirmation pending - awaiting customer response');
+    }
+    if (callData.pendingCityConfirm || callData.awaitingCityConfirm) {
+        pendingActions.push('⏳ City confirmation pending - awaiting customer response');
+    }
+    if (callData.awaitingFinalConfirm) {
+        pendingActions.push('⏳ Final confirmation pending - awaiting customer response');
+    }
+    if (callData.awaitingAlternatePhone) {
+        pendingActions.push('⏳ Alternate phone pending - customer wants to change phone');
+    }
+    
+    const pendingActionsText = pendingActions.length > 0 ? `
+
+=== ⏳ PENDING ACTIONS ===
+${pendingActions.join('\n')}
+
+**IMPORTANT:** If customer responds to a pending action, use the appropriate confirmation function.
+` : '';
+
+    // Determine what's already collected vs what's needed
+    const collectedFields = [];
+    const neededFields = [];
+    
+    if (d.machine_no) {
+        collectedFields.push(`✅ machine_no: ${d.machine_no}${callData.customerData ? ' (VALIDATED)' : ''}`);
+    } else {
+        neededFields.push('❌ machine_no');
+    }
+    
+    if (d.complaint_title) {
+        collectedFields.push(`✅ complaint_title: ${d.complaint_title}`);
+    } else {
+        neededFields.push('❌ complaint_title');
+    }
+    
+    if (d.machine_status) {
+        collectedFields.push(`✅ machine_status: ${d.machine_status}`);
+    } else {
+        neededFields.push('❌ machine_status');
+    }
+    
+    if (d.city) {
+        collectedFields.push(`✅ city: ${d.city}`);
+    } else {
+        neededFields.push('❌ city');
+    }
+    
+    if (d.customer_phone) {
+        collectedFields.push(`✅ customer_phone: ${d.customer_phone}`);
+    } else {
+        neededFields.push('❌ customer_phone');
+    }
+    
+    const dataStatusText = `
+
+=== 📊 DATA COLLECTION STATUS ===
+**Collected:**
+${collectedFields.length > 0 ? collectedFields.join('\n') : 'Nothing collected yet'}
+
+**Still Needed:**
+${neededFields.length > 0 ? neededFields.join('\n') : 'All data collected! ✅'}
+
+**Next Action:** ${nextQuestion}
+`;
+
     return `You are Priya — a warm, intelligent, fast-speaking female service agent at Rajesh Motors JCB service center.
+${functionGuidance}
+${functionLogText}
+${pendingActionsText}
+${dataStatusText}
 
 === CALL CONTEXT ===
 Turn: ${turnNumber}
@@ -227,6 +403,15 @@ You are an AI agent with LOGICAL REASONING and CONTEXTUAL UNDERSTANDING.
    - If customer says "maine abhi diya": "Haan, mil gaya. Ab [next field] chahiye."
    - If customer is confused: "Theek hai, [collected field] note hai. Ab [next field] bataiye."
    - NEVER ask for the same field twice - check DO NOT ASK list above
+
+8. **Function Calling Intelligence** (if enabled):
+   - Call capture_* functions immediately when customer provides data
+   - Call validate_* functions after capturing machine_no, phone, city
+   - Call update_* functions when customer corrects data (don't capture again)
+   - Call add_additional_complaint when customer mentions more problems
+   - Call confirm_* functions during confirmation phase
+   - Call submit_complaint ONLY after final_confirmation
+   - Functions enhance data collection, work WITH JSON extraction
 
 === LANGUAGE RULES ===
 Understand Hindi, English, Rajasthani, Marwari naturally.
@@ -383,9 +568,22 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // Build system prompt
-        const systemPrompt = buildSystemPrompt(callData);
+        // Initialize state tracking (if not already initialized)
+        initializeStateTracking(callData);
+        
+        // Determine current state
+        const currentState = determineCurrentState(callData);
+        console.log(`   🎯 [STATE] Current: ${currentState}`);
+
+        // Build dynamic system prompt based on current state
+        const systemPrompt = buildDynamicPrompt(callData, USE_FUNCTION_CALLING);
         prompt = systemPrompt;
+        
+        // Log prompt stats for debugging
+        const promptLines = systemPrompt.split('\n').length;
+        const promptChars = systemPrompt.length;
+        const estimatedTokens = Math.ceil(promptChars / 4);
+        console.log(`   📝 [PROMPT] Lines: ${promptLines}, Chars: ${promptChars}, Est. Tokens: ${estimatedTokens}`);
 
         const messages = [
             { role: "system", content: systemPrompt },
@@ -393,6 +591,7 @@ export async function getSmartAIResponse(callData) {
                 role: m.role === "user" ? "user" : "assistant",
                 content: m.text,
             })),
+            
         ];
         if (!messages.find(m => m.role === "user")) {
             messages.push({ role: "user", content: "[call connected]" });
@@ -402,41 +601,68 @@ export async function getSmartAIResponse(callData) {
         console.log(`   ⚡ [PARALLEL] Starting LLM call...`);
         const llmStartTime = Date.now();
         
-        const resp = await client.chat.completions.create({
+        // Prepare request parameters
+        const requestParams = {
             model: model,
             messages,
             temperature: 0.15,
             max_tokens: 160,
             top_p: 0.9,
-        });
+        };
+        
+        // Add function calling if enabled (Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5)
+        if (USE_FUNCTION_CALLING) {
+            requestParams.tools = [...getPhase1Functions(), ...getPhase2Functions(), ...getPhase3Functions(), ...getPhase4Functions(), ...getPhase5Functions()];
+            requestParams.tool_choice = "auto"; // Let LLM decide when to call functions
+            console.log(`   🔧 [FUNCTION CALLING] Enabled - ${requestParams.tools.length} functions available (Phase 1: 5, Phase 2: 5, Phase 3: 4, Phase 4: 3, Phase 5: 3)`);
+        }
+        
+        const resp = await client.chat.completions.create(requestParams);
 
         const llmEndTime = Date.now();
         console.log(`   ⚡ [PARALLEL] LLM completed in ${llmEndTime - llmStartTime}ms`);
 
         const raw = resp.choices?.[0]?.message?.content?.trim();
-        if (!raw) throw new Error("Empty Azure OpenAI response");
+        const finishReason = resp.choices?.[0]?.finish_reason;
+        
+        // Check if LLM wants to call functions
+        let functionCalls = null;
+        if (USE_FUNCTION_CALLING && finishReason === 'tool_calls') {
+            functionCalls = resp.choices?.[0]?.message?.tool_calls;
+            console.log(`   🔧 [FUNCTION CALLS] LLM requested ${functionCalls?.length || 0} function call(s)`);
+        }
+        
+        if (!raw && !functionCalls) throw new Error("Empty Azure OpenAI response");
 
-        response = raw;
+        response = raw || "[Function calls only]";
 
         // ⚡ PARALLEL OPTIMIZATION: Parse response quickly (don't wait)
         const parseStartTime = Date.now();
         
-        // Parse response
-        const sepIdx = raw.indexOf("###");
-        let replyText = sepIdx !== -1 ? raw.slice(0, sepIdx).trim() : raw.trim();
+        // Parse response - only if we have text content
+        let replyText = "";
         let extractedJSON = {};
         let readyToSubmit = false;
 
-        if (sepIdx !== -1) {
-            try {
-                const jsonStr = raw.slice(sepIdx + 3).trim().replace(/```json|```/g, "");
-                const match = jsonStr.match(/\{[\s\S]*\}/);
-                if (match) {
-                    const parsed = JSON.parse(match[0]);
-                    readyToSubmit = !!parsed.ready_to_submit;
-                    extractedJSON = parsed.extracted || {};
-                }
-            } catch { /* ignore */ }
+        if (raw) {
+            // Parse response only if raw content exists
+            const sepIdx = raw.indexOf("###");
+            replyText = sepIdx !== -1 ? raw.slice(0, sepIdx).trim() : raw.trim();
+
+            if (sepIdx !== -1) {
+                try {
+                    const jsonStr = raw.slice(sepIdx + 3).trim().replace(/```json|```/g, "");
+                    const match = jsonStr.match(/\{[\s\S]*\}/);
+                    if (match) {
+                        const parsed = JSON.parse(match[0]);
+                        readyToSubmit = !!parsed.ready_to_submit;
+                        extractedJSON = parsed.extracted || {};
+                    }
+                } catch { /* ignore */ }
+            }
+        } else if (functionCalls) {
+            // If only function calls (no text), set a default reply
+            replyText = ""; // Will be set after function execution
         }
 
         const parseEndTime = Date.now();
@@ -475,15 +701,24 @@ export async function getSmartAIResponse(callData) {
             }
         }
 
-        // Clean reply
-        replyText = replyText.replace(/```[\s\S]*?```/g, "").replace(/###[\s\S]*/g, "").trim();
+        // Clean reply - only if we have text
+        if (replyText) {
+            replyText = replyText.replace(/```[\s\S]*?```/g, "").replace(/###[\s\S]*/g, "").trim();
+        }
 
-        // ⛔ LOOP PREVENTION: Validate response doesn't ask for already collected fields
+        // ⛔ LOOP PREVENTION: DISABLED - LLM handles question generation with function calling
+        // The loop detection was overriding LLM's intelligent responses, especially for update requests.
+        // With function calling + good prompts, LLM is reliable enough to avoid loops on its own.
+        // If loops occur, fix the prompt/function definitions, not override LLM's output.
+        
+        /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+           LEGACY LOOP DETECTION CODE (DISABLED)
+           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         const d = callData.extractedData;
-        const replyLower = replyText.toLowerCase();
+        const replyLower = replyText ? replyText.toLowerCase() : '';
         
         // Check if asking for machine number when already collected
-        if (d.machine_no && /machine\s*(number|no|नंबर|नम्बर)|chassis|बताइए|बताइये/.test(replyLower) && /number|नंबर/.test(replyLower)) {
+        if (replyLower && d.machine_no && /machine\s*(number|no|नंबर|नम्बर)|chassis|बताइए|बताइये/.test(replyLower) && /number|नंबर/.test(replyLower)) {
             console.warn(`⚠️ [LOOP DETECTED] AI asking for machine_no but already have: ${d.machine_no}`);
             // Override with smart redirect
             if (!d.complaint_title) {
@@ -501,7 +736,7 @@ export async function getSmartAIResponse(callData) {
         }
         
         // Check if asking for complaint when already collected
-        if (d.complaint_title && /(kya|kaun|kaunsi)\s*(problem|complaint|dikkat|परेशानी|समस्या)|problem\s*bata|complaint\s*bata/.test(replyLower)) {
+        if (replyLower && d.complaint_title && /(kya|kaun|kaunsi)\s*(problem|complaint|dikkat|परेशानी|समस्या)|problem\s*bata|complaint\s*bata/.test(replyLower)) {
             console.warn(`⚠️ [LOOP DETECTED] AI asking for complaint but already have: ${d.complaint_title}`);
             // Override with smart redirect
             if (!d.machine_status) {
@@ -517,7 +752,7 @@ export async function getSmartAIResponse(callData) {
         }
         
         // Check if asking for city when already collected
-        if (d.city && /(kaunse|kaun|kis)\s*(shahar|city|शहर)|city\s*bata|shahar\s*bata/.test(replyLower)) {
+        if (replyLower && d.city && /(kaunse|kaun|kis)\s*(shahar|city|शहर)|city\s*bata|shahar\s*bata/.test(replyLower)) {
             console.warn(`⚠️ [LOOP DETECTED] AI asking for city but already have: ${d.city}`);
             // Override with smart redirect
             if (!d.customer_phone) {
@@ -529,7 +764,7 @@ export async function getSmartAIResponse(callData) {
         }
         
         // Check if asking for phone when already collected
-        if (d.customer_phone && /(phone|mobile|number|नंबर|फोन)\s*(number|bata|kya|क्या)/.test(replyLower) && !/machine/.test(replyLower)) {
+        if (replyLower && d.customer_phone && /(phone|mobile|number|नंबर|फोन)\s*(number|bata|kya|क्या)/.test(replyLower) && !/machine/.test(replyLower)) {
             console.warn(`⚠️ [LOOP DETECTED] AI asking for phone but already have: ${d.customer_phone}`);
             // Override with smart redirect
             replyText = "Phone number mil gaya. Aur koi problem? Save kar dun?";
@@ -537,7 +772,7 @@ export async function getSmartAIResponse(callData) {
         }
         
         // Check if asking for machine status when already collected
-        if (d.machine_status && /(band|chal\s*rahi|khadi|बंद|चल\s*रही)\s*(hai|है)/.test(replyLower) && /\?/.test(replyText)) {
+        if (replyLower && d.machine_status && /(band|chal\s*rahi|khadi|बंद|चल\s*रही)\s*(hai|है)/.test(replyLower) && /\?/.test(replyText)) {
             console.warn(`⚠️ [LOOP DETECTED] AI asking for machine_status but already have: ${d.machine_status}`);
             // Override with smart redirect
             if (!d.city) {
@@ -549,6 +784,15 @@ export async function getSmartAIResponse(callData) {
             }
             console.log(`   ✅ [LOOP FIXED] Redirected to: "${replyText}"`);
         }
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+        // 📊 LLM RESPONSE LOGGING - See what LLM actually generated
+        console.log(`   🤖 [LLM RESPONSE] "${replyText || '[No text response]'}"`);
+        if (functionCalls && functionCalls.length > 0) {
+            console.log(`   🔧 [LLM WANTS TO CALL] ${functionCalls.length} function(s)`);
+        } else {
+            console.log(`   💬 [LLM MODE] Text response only (no function calls)`);
+        }
 
         // Validate before marking ready
         if (readyToSubmit) {
@@ -557,6 +801,12 @@ export async function getSmartAIResponse(callData) {
                 readyToSubmit = false; 
                 console.warn(`⚠️ Not ready: ${v.reason}`); 
             }
+        }
+        
+        // Update state after processing (state may have changed due to data collection)
+        const newState = determineCurrentState(callData);
+        if (callData.stateTracking && newState !== callData.stateTracking.currentState) {
+            updateState(callData, newState, callData.turnCount);
         }
 
         const latency = Date.now() - startTime;
@@ -578,10 +828,35 @@ export async function getSmartAIResponse(callData) {
             }
         );
 
-        console.log(`   🤖 AI: "${replyText}" | ready:${readyToSubmit}`);
-        console.log(`   ⚡ [PARALLEL] Total AI processing: ${latency}ms (LLM: ${llmEndTime - llmStartTime}ms, Parse: ${parseEndTime - parseStartTime}ms)`);
+        // If only function calls (no text), provide a default response
+        // The actual response will be generated after function execution in voiceRoutes.js
+        const finalText = replyText || "Ji, bataiye.";
+
+        // 📊 FINAL OUTPUT LOGGING - What we're returning to the system
+        console.log(`   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        console.log(`   📤 [FINAL OUTPUT]`);
+        console.log(`   💬 Text: "${finalText}"`);
+        console.log(`   🔧 Function Calls: ${functionCalls ? functionCalls.length : 0}`);
+        if (functionCalls && functionCalls.length > 0) {
+            functionCalls.forEach((fc, idx) => {
+                const args = JSON.parse(fc.function.arguments || '{}');
+                const argStr = Object.entries(args).map(([k, v]) => `${k}="${v}"`).join(', ');
+                console.log(`      ${idx + 1}. ${fc.function.name}(${argStr})`);
+            });
+        }
+        console.log(`   📊 Ready to Submit: ${readyToSubmit}`);
+        console.log(`   ⏱️  Latency: ${latency}ms | Tokens: ${tokens}`);
+        console.log(`   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
         
-        return { text: replyText, extractedData: merged, readyToSubmit, tokens, cost };
+        
+        return { 
+            text: finalText, 
+            extractedData: merged, 
+            readyToSubmit, 
+            tokens, 
+            cost,
+            functionCalls: functionCalls || null // Include function calls if any
+        };
 
     } catch (err) {
         error = err.message;
@@ -719,7 +994,8 @@ export function extractAllData(text, cur = {}) {
         else if (/(filter|filttar|filtar|service|servicing|seva|oil change|tel badlo|tel badalwana)/.test(lo)) ex.complaint_title = "Service/Filter Change";
         else if (/(dhuan|dhua|smoke|dhuen|dhuwaan)/.test(lo)) ex.complaint_title = "Engine Smoke";
         else if (/(garam|dhak|overheat|ubhal|tapta|tapt gyi|bahut garam|dhak gyi)/.test(lo)) ex.complaint_title = "Engine Overheating";
-        else if (/(tel nikal|oil leak|rissa|risso|tel nikal ryo|oil aa raha|tel aa raha|riss ryo)/.test(lo)) ex.complaint_title = "Oil Leakage";
+        // IMPROVED: Added more oil leakage patterns including "oli", "haveli", "oil kor", etc.
+        else if (/(tel nikal|oil leak|rissa|risso|tel nikal ryo|oil aa raha|tel aa raha|riss ryo|oli|haveli|haweli|oil kor|oli kor|tel kor|oil nikal|tel leak|oil leakage)/.test(lo)) ex.complaint_title = "Oil Leakage";
         else if (/(hydraulic|hydraulik|hydro|ailak|cylinder|bucket|boom|jack|dipper|bucket nai uthta)/.test(lo)) ex.complaint_title = "Hydraulic System Failure";
         else if (/(race nahi|race nai|ras nahi|ras nai|accelerator|gas nahi|gas nai|pickup nahi|gas nai leti)/.test(lo)) ex.complaint_title = "Accelerator Problem";
         else if (/(ac nahi|ac nai|hawa nahi|thanda nahi|ac band|ac kharab|cooling nahi|thando nai)/.test(lo)) ex.complaint_title = "AC Not Working";

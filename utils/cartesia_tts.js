@@ -24,36 +24,36 @@ const CARTESIA_CONFIG = {
  * Validate Cartesia configuration and API key
  */
 function validateCartesiaConfig() {
-    console.log(`\n🔐 [CARTESIA AUTH] Configuration Validation`);
+    // console.log(`\n🔐 [CARTESIA AUTH] Configuration Validation`);
     
     // Get API key directly from environment (avoid timing issues)
     const apiKey = process.env.CARTESIA_API_KEY;
-    console.log(`🔍 Environment Debug: process.env.CARTESIA_API_KEY = "${apiKey || 'UNDEFINED'}"`);
+    // console.log(`🔍 Environment Debug: process.env.CARTESIA_API_KEY = "${apiKey || 'UNDEFINED'}"`);
     
     // API Key validation
     if (!apiKey) {
-        console.log(`❌ API Key: NOT SET`);
+        // console.log(`❌ API Key: NOT SET`);
         return false;
     }
     
-    console.log(`🔑 API Key: ${apiKey.substring(0, 12)}... (${apiKey.length} chars)`);
-    console.log(`🔑 Key Format: ${apiKey.startsWith('sk_car_') ? 'Valid (sk_car_)' : 'Invalid format'}`);
+    // console.log(`🔑 API Key: ${apiKey.substring(0, 12)}... (${apiKey.length} chars)`);
+    // console.log(`🔑 Key Format: ${apiKey.startsWith('sk_car_') ? 'Valid (sk_car_)' : 'Invalid format'}`);
     
     // Configuration validation
-    console.log(`\n✅ [PAYLOAD VALIDATION] Configuration Check`);
-    console.log(`📋 Required Fields:`);
-    console.log(`   ✅ model_id: "${CARTESIA_CONFIG.model_id}"`);
-    console.log(`   ✅ voice.mode: "${CARTESIA_CONFIG.voice.mode}"`);
-    console.log(`   ✅ voice.id: "${CARTESIA_CONFIG.voice.id.substring(0, 12)}..." (Arushi - Hinglish Speaker)`);
-    console.log(`   ✅ language: "${CARTESIA_CONFIG.language}"`);
+    // console.log(`\n✅ [PAYLOAD VALIDATION] Configuration Check`);
+    // console.log(`📋 Required Fields:`);
+    // console.log(`   ✅ model_id: "${CARTESIA_CONFIG.model_id}"`);
+    // console.log(`   ✅ voice.mode: "${CARTESIA_CONFIG.voice.mode}"`);
+    // console.log(`   ✅ voice.id: "${CARTESIA_CONFIG.voice.id.substring(0, 12)}..." (Arushi - Hinglish Speaker)`);
+    // console.log(`   ✅ language: "${CARTESIA_CONFIG.language}"`);
     
-    console.log(`📋 Output Format:`);
-    console.log(`   ✅ container: "${CARTESIA_CONFIG.output_format.container}"`);
-    console.log(`   ✅ encoding: "${CARTESIA_CONFIG.output_format.encoding}"`);
-    console.log(`   ✅ sample_rate: ${CARTESIA_CONFIG.output_format.sample_rate}Hz`);
+    // console.log(`📋 Output Format:`);
+    // console.log(`   ✅ container: "${CARTESIA_CONFIG.output_format.container}"`);
+    // console.log(`   ✅ encoding: "${CARTESIA_CONFIG.output_format.encoding}"`);
+    // console.log(`   ✅ sample_rate: ${CARTESIA_CONFIG.output_format.sample_rate}Hz`);
     
-    console.log(`🌐 Endpoint: ${CARTESIA_API_URL}`);
-    console.log(`✅ SSL Certificate: Valid (HTTPS)`);
+    // console.log(`🌐 Endpoint: ${CARTESIA_API_URL}`);
+    // console.log(`✅ SSL Certificate: Valid (HTTPS)`);
     
     return true;
 }
@@ -93,28 +93,28 @@ export async function generateSpeech(text, options = {}) {
             throw new Error('Cartesia configuration validation failed');
         }
 
-        console.log(`\n🔍 [CARTESIA DEBUG] Pre-Request Analysis`);
-        console.log(`📋 Original Text: "${text}"`);
-        console.log(`🎭 Input Emotion: ${emotion}`);
-        console.log(`📍 Input Context: ${context}`);
-        console.log(`⚡ Speed: ${speed}`);
+        // console.log(`\n🔍 [CARTESIA DEBUG] Pre-Request Analysis`);
+        // console.log(`📋 Original Text: "${text}"`);
+        // console.log(`🎭 Input Emotion: ${emotion}`);
+        // console.log(`📍 Input Context: ${context}`);
+        // console.log(`⚡ Speed: ${speed}`);
 
         // Add emotion tags based on context and emotion
         const enhancedText = addEmotionTags(text, emotion, context);
         
-        console.log(`🔄 Enhanced Text: "${enhancedText}"`);
-        console.log(`📏 Enhanced Text Length: ${enhancedText.length} characters`);
+        // console.log(`🔄 Enhanced Text: "${enhancedText}"`);
+        // console.log(`📏 Enhanced Text Length: ${enhancedText.length} characters`);
 
         // Validate for double emotion tags
-        const doubleEmotionCheck = enhancedText.match(/<emotion[^>]*><emotion[^>]*>/g);
-        if (doubleEmotionCheck) {
-            console.log(`❌ [VALIDATION ERROR] Double emotion tags detected: ${doubleEmotionCheck.length} instances`);
-            doubleEmotionCheck.forEach((match, i) => {
-                console.log(`   ${i + 1}. "${match}"`);
-            });
-        } else {
-            console.log(`✅ [VALIDATION] No double emotion tags detected`);
-        }
+        // const doubleEmotionCheck = enhancedText.match(/<emotion[^>]*><emotion[^>]*>/g);
+        // if (doubleEmotionCheck) {
+        //     console.log(`❌ [VALIDATION ERROR] Double emotion tags detected: ${doubleEmotionCheck.length} instances`);
+        //     doubleEmotionCheck.forEach((match, i) => {
+        //         console.log(`   ${i + 1}. "${match}"`);
+        //     });
+        // } else {
+        //     console.log(`✅ [VALIDATION] No double emotion tags detected`);
+        // }
 
         const payload = {
             ...CARTESIA_CONFIG,
@@ -122,27 +122,27 @@ export async function generateSpeech(text, options = {}) {
             speed: Math.max(0.5, Math.min(2.0, speed))  // Clamp speed between 0.5 and 2.0
         };
 
-        console.log(`\n📦 [CARTESIA DEBUG] Final Payload:`);
-        console.log(`   Model: ${payload.model_id}`);
-        console.log(`   Voice ID: ${payload.voice.id}`);
-        console.log(`   Voice Mode: ${payload.voice.mode}`);
-        console.log(`   Language: ${payload.language}`);
-        console.log(`   Speed: ${payload.speed}`);
-        console.log(`   Output Format: ${payload.output_format.container}/${payload.output_format.encoding}@${payload.output_format.sample_rate}Hz`);
-        console.log(`   Transcript: "${payload.transcript}"`);
-        console.log(`   Payload Size: ${JSON.stringify(payload).length} bytes`);
+        // console.log(`\n📦 [CARTESIA DEBUG] Final Payload:`);
+        // console.log(`   Model: ${payload.model_id}`);
+        // console.log(`   Voice ID: ${payload.voice.id}`);
+        // console.log(`   Voice Mode: ${payload.voice.mode}`);
+        // console.log(`   Language: ${payload.language}`);
+        // console.log(`   Speed: ${payload.speed}`);
+        // console.log(`   Output Format: ${payload.output_format.container}/${payload.output_format.encoding}@${payload.output_format.sample_rate}Hz`);
+        // console.log(`   Transcript: "${payload.transcript}"`);
+        // console.log(`   Payload Size: ${JSON.stringify(payload).length} bytes`);
 
-        console.log(`\n🌐 [CARTESIA HTTP] Request Details`);
-        console.log(`🔗 URL: ${CARTESIA_API_URL}`);
-        console.log(`🔑 API Key: ${apiKey ? apiKey.substring(0, 12) + '...' : 'NOT SET'}`);
-        console.log(`📋 Headers: Authorization: Bearer, Content-Type: application/json, Cartesia-Version: 2024-11-13`);
-        console.log(`⏱️  Request Sent: ${new Date().toISOString()}`);
+        // console.log(`\n🌐 [CARTESIA HTTP] Request Details`);
+        // console.log(`🔗 URL: ${CARTESIA_API_URL}`);
+        // console.log(`🔑 API Key: ${apiKey ? apiKey.substring(0, 12) + '...' : 'NOT SET'}`);
+        // console.log(`📋 Headers: Authorization: Bearer, Content-Type: application/json, Cartesia-Version: 2024-11-13`);
+        // console.log(`⏱️  Request Sent: ${new Date().toISOString()}`);
         
-        console.log(`🎤 [Cartesia TTS] Generating: "${enhancedText}" | emotion: ${emotion} | context: ${context}`);
+        // console.log(`🎤 [Cartesia TTS] Generating: "${enhancedText}" | emotion: ${emotion} | context: ${context}`);
 
-        console.log(`🔐 [FINAL AUTH CHECK] Using API Key: ${apiKey.substring(0, 12)}... (${apiKey.length} chars)`);
-        console.log(`🔐 [AUTH METHOD] Authorization: Bearer (Updated from X-API-Key)`);
-        console.log(`🔐 [API VERSION] Cartesia-Version: 2024-11-13 (Updated from 2026-03-01)`);
+        // console.log(`🔐 [FINAL AUTH CHECK] Using API Key: ${apiKey.substring(0, 12)}... (${apiKey.length} chars)`);
+        // console.log(`🔐 [AUTH METHOD] Authorization: Bearer (Updated from X-API-Key)`);
+        // console.log(`🔐 [API VERSION] Cartesia-Version: 2024-11-13 (Updated from 2026-03-01)`);
 
         const response = await axios.post(CARTESIA_API_URL, payload, {
             headers: {
@@ -154,18 +154,18 @@ export async function generateSpeech(text, options = {}) {
             timeout: 10000  // 10 second timeout
         });
 
-        console.log(`\n✅ [CARTESIA HTTP] Response Success`);
-        console.log(`📊 Status: ${response.status} ${response.statusText}`);
-        console.log(`📋 Response Headers:`, Object.keys(response.headers));
-        console.log(`📦 Response Size: ${response.data.byteLength} bytes`);
-        console.log(`⏱️  Response Received: ${new Date().toISOString()} (${Date.now() - startTime}ms)`);
+        // console.log(`\n✅ [CARTESIA HTTP] Response Success`);
+        // console.log(`📊 Status: ${response.status} ${response.statusText}`);
+        // console.log(`📋 Response Headers:`, Object.keys(response.headers));
+        // console.log(`📦 Response Size: ${response.data.byteLength} bytes`);
+        // console.log(`⏱️  Response Received: ${new Date().toISOString()} (${Date.now() - startTime}ms)`);
 
         if (response.status === 200) {
             audioData = Buffer.from(response.data);
-            console.log(`✅ [Cartesia TTS] Generated ${audioData.byteLength} bytes of raw PCM audio`);
+            // console.log(`✅ [Cartesia TTS] Generated ${audioData.byteLength} bytes of raw PCM audio`);
             
             // Convert PCM to WAV format for Twilio compatibility
-            console.log(`🔄 [Cartesia TTS] Converting to WAV format...`);
+            // console.log(`🔄 [Cartesia TTS] Converting to WAV format...`);
             const wavAudio = convertPCMToWAV(audioData, 22050, 1);
             
             // Validate converted audio
@@ -187,9 +187,9 @@ export async function generateSpeech(text, options = {}) {
                 convertedSize: wavAudio.length
             });
             
-            console.log(`💾 [Cartesia TTS] Cached audio with ID: ${audioId}`);
-            console.log(`📊 [Cartesia TTS] Duration: ${duration.toFixed(2)}s`);
-            console.log(`📈 [Cartesia TTS] Size: ${audioData.length} → ${wavAudio.length} bytes (${((wavAudio.length - audioData.length) / audioData.length * 100).toFixed(1)}% change)`);
+            // console.log(`💾 [Cartesia TTS] Cached audio with ID: ${audioId}`);
+            // console.log(`📊 [Cartesia TTS] Duration: ${duration.toFixed(2)}s`);
+            // console.log(`📈 [Cartesia TTS] Size: ${audioData.length} → ${wavAudio.length} bytes (${((wavAudio.length - audioData.length) / audioData.length * 100).toFixed(1)}% change)`);
             
             const latency = Date.now() - startTime;
             const cost = calculateTTSCost(text.length, 'cartesia');
@@ -239,32 +239,32 @@ export async function generateSpeech(text, options = {}) {
         error = err.message;
         const latency = Date.now() - startTime;
         
-        console.log(`\n❌ [CARTESIA HTTP] Response Error`);
-        console.log(`📊 Status: ${err.response?.status || 'No Response'} ${err.response?.statusText || ''}`);
-        console.log(`📋 Response Headers:`, err.response?.headers ? Object.keys(err.response.headers) : 'None');
+        // console.log(`\n❌ [CARTESIA HTTP] Response Error`);
+        // console.log(`📊 Status: ${err.response?.status || 'No Response'} ${err.response?.statusText || ''}`);
+        // console.log(`📋 Response Headers:`, err.response?.headers ? Object.keys(err.response.headers) : 'None');
         
-        if (err.response?.data) {
-            try {
-                // Try to parse error response as text first
-                const errorText = Buffer.isBuffer(err.response.data) 
-                    ? err.response.data.toString('utf8') 
-                    : err.response.data;
-                console.log(`📦 Error Response Body: "${errorText}"`);
+        // if (err.response?.data) {
+        //     try {
+        //         // Try to parse error response as text first
+        //         const errorText = Buffer.isBuffer(err.response.data) 
+        //             ? err.response.data.toString('utf8') 
+        //             : err.response.data;
+        //         console.log(`📦 Error Response Body: "${errorText}"`);
                 
-                // Try to parse as JSON
-                try {
-                    const errorJson = JSON.parse(errorText);
-                    console.log(`🔍 Parsed Error Details:`, errorJson);
-                } catch {
-                    console.log(`🔍 Raw Error Text: "${errorText}"`);
-                }
-            } catch (parseErr) {
-                console.log(`📦 Error Response: [Unable to parse response data]`);
-            }
-        }
+        //         // Try to parse as JSON
+        //         try {
+        //             const errorJson = JSON.parse(errorText);
+        //             console.log(`🔍 Parsed Error Details:`, errorJson);
+        //         } catch {
+        //             console.log(`🔍 Raw Error Text: "${errorText}"`);
+        //         }
+        //     } catch (parseErr) {
+        //         console.log(`📦 Error Response: [Unable to parse response data]`);
+        //     }
+        // }
         
-        console.log(`⏱️  Error Occurred: ${new Date().toISOString()} (${latency}ms)`);
-        console.log(`🔍 Full Error: ${err.message}`);
+        // console.log(`⏱️  Error Occurred: ${new Date().toISOString()} (${latency}ms)`);
+        // console.log(`🔍 Full Error: ${err.message}`);
         
         console.error('❌ [Cartesia TTS] Error:', error);
         
@@ -315,81 +315,81 @@ export async function generateSpeech(text, options = {}) {
  * @returns {string} Enhanced text with emotion tags
  */
 function addEmotionTags(text, emotion, context) {
-    console.log(`\n🎭 [EMOTION PROCESSING] Step-by-Step Analysis`);
-    console.log(`📝 Input Text: "${text}"`);
-    console.log(`🔍 Target Emotion: ${emotion}`);
-    console.log(`📍 Target Context: ${context}`);
+    // console.log(`\n🎭 [EMOTION PROCESSING] Step-by-Step Analysis`);
+    // console.log(`📝 Input Text: "${text}"`);
+    // console.log(`🔍 Target Emotion: ${emotion}`);
+    // console.log(`📍 Target Context: ${context}`);
 
     let enhancedText = text;
 
     // Check if text already has emotion tags - CRITICAL FIX
     const hasExistingEmotionTags = /<emotion[^>]*>.*?<\/emotion>/i.test(text);
-    console.log(`🔍 Existing Emotion Tags: ${hasExistingEmotionTags ? 'YES - SKIPPING WRAPPER' : 'NO'}`);
+    // console.log(`🔍 Existing Emotion Tags: ${hasExistingEmotionTags ? 'YES - SKIPPING WRAPPER' : 'NO'}`);
     
     if (hasExistingEmotionTags) {
-        console.log(`⚠️  [SKIP] Text already contains emotion tags - returning as-is`);
+        // console.log(`⚠️  [SKIP] Text already contains emotion tags - returning as-is`);
         // Add natural pauses only (safe to add always)
         enhancedText = text.replace(/\. /g, '. <break time="0.3s"/> ');
         enhancedText = enhancedText.replace(/\? /g, '? <break time="0.2s"/> ');
-        console.log(`📤 [FINAL OUTPUT] Enhanced Text: "${enhancedText}"`);
+        // console.log(`📤 [FINAL OUTPUT] Enhanced Text: "${enhancedText}"`);
         return enhancedText;
     }
 
     // Only add emotion wrapper if professional tone is NOT requested
     // Professional = no emotion tags, natural speech
     if (emotion !== 'professional') {
-        console.log(`\n🔄 [STEP 1] Adding emotion wrapper for: ${emotion}`);
+        // console.log(`\n🔄 [STEP 1] Adding emotion wrapper for: ${emotion}`);
         switch (emotion) {
             case 'empathetic':
                 enhancedText = `<emotion value="empathetic">${text}</emotion>`;
-                console.log(`   ✅ Applied empathetic wrapper`);
+                // console.log(`   ✅ Applied empathetic wrapper`);
                 break;
             case 'friendly':
                 enhancedText = `<emotion value="friendly">${text}</emotion>`;
-                console.log(`   ✅ Applied friendly wrapper`);
+                // console.log(`   ✅ Applied friendly wrapper`);
                 break;
             case 'concerned':
                 enhancedText = `<emotion value="concerned">${text}</emotion>`;
-                console.log(`   ✅ Applied concerned wrapper`);
+                // console.log(`   ✅ Applied concerned wrapper`);
                 break;
             case 'excited':
                 enhancedText = `<emotion value="excited">${text}</emotion>`;
-                console.log(`   ✅ Applied excited wrapper`);
+                // console.log(`   ✅ Applied excited wrapper`);
                 break;
             default:
-                console.log(`   ✅ Professional tone - no emotion wrapper added`);
+                // console.log(`   ✅ Professional tone - no emotion wrapper added`);
                 break;
         }
     } else {
-        console.log(`\n🔄 [STEP 1] Professional tone - skipping emotion wrapper`);
+        // console.log(`\n🔄 [STEP 1] Professional tone - skipping emotion wrapper`);
     }
 
     // Add natural pauses for better flow (safe to add always)
-    console.log(`\n🔄 [STEP 2] Adding natural pauses`);
+    // console.log(`\n🔄 [STEP 2] Adding natural pauses`);
     const beforePauses = enhancedText;
     enhancedText = enhancedText.replace(/\. /g, '. <break time="0.3s"/> ');
     enhancedText = enhancedText.replace(/\? /g, '? <break time="0.2s"/> ');
     
-    if (beforePauses !== enhancedText) {
-        console.log(`   ✅ Added natural pauses`);
-    } else {
-        console.log(`   ⏭️  No pauses needed`);
-    }
+    // if (beforePauses !== enhancedText) {
+    //     console.log(`   ✅ Added natural pauses`);
+    // } else {
+    //     console.log(`   ⏭️  No pauses needed`);
+    // }
 
-    console.log(`\n📤 [FINAL OUTPUT] Enhanced Text: "${enhancedText}"`);
+    // console.log(`\n📤 [FINAL OUTPUT] Enhanced Text: "${enhancedText}"`);
     
     // Final validation check
     const finalDoubleCheck = enhancedText.match(/<emotion[^>]*><emotion[^>]*>/g);
     if (finalDoubleCheck) {
-        console.log(`❌ [FINAL VALIDATION] Double emotion tags detected - CRITICAL ERROR!`);
-        finalDoubleCheck.forEach((match, i) => {
-            console.log(`   ${i + 1}. "${match}"`);
-        });
+        // console.log(`❌ [FINAL VALIDATION] Double emotion tags detected - CRITICAL ERROR!`);
+        // finalDoubleCheck.forEach((match, i) => {
+        //     console.log(`   ${i + 1}. "${match}"`);
+        // });
         // Emergency fix: remove all emotion tags and return plain text
         enhancedText = text;
-        console.log(`🚨 [EMERGENCY FIX] Returning plain text without emotion tags`);
+        // console.log(`🚨 [EMERGENCY FIX] Returning plain text without emotion tags`);
     } else {
-        console.log(`✅ [FINAL VALIDATION] No double emotion tags - output is clean`);
+        // console.log(`✅ [FINAL VALIDATION] No double emotion tags - output is clean`);
     }
 
     return enhancedText;

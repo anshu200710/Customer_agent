@@ -21,7 +21,7 @@ class AudioCache {
         // Start cleanup interval
         this.startCleanupInterval();
         
-        console.log(`🗄️  [AUDIO CACHE] Initialized with max size: ${this.maxCacheSize}, max age: ${this.maxAge / 1000}s`);
+        // console.log(`🗄️  [AUDIO CACHE] Initialized with max size: ${this.maxCacheSize}, max age: ${this.maxAge / 1000}s`);
     }
     
     /**
@@ -48,11 +48,11 @@ class AudioCache {
             }
         });
         
-        console.log(`💾 [AUDIO CACHE] Stored audio: ${audioId}`);
-        console.log(`   📊 Size: ${audioBuffer.length} bytes`);
-        console.log(`   🎭 Voice: ${metadata.voice || 'unknown'}`);
-        console.log(`   📝 Text: "${(metadata.text || '').substring(0, 50)}${metadata.text && metadata.text.length > 50 ? '...' : ''}"`);
-        console.log(`   🗄️  Cache size: ${this.cache.size}/${this.maxCacheSize}`);
+        // console.log(`💾 [AUDIO CACHE] Stored audio: ${audioId}`);
+        // console.log(`   📊 Size: ${audioBuffer.length} bytes`);
+        // console.log(`   🎭 Voice: ${metadata.voice || 'unknown'}`);
+        // console.log(`   📝 Text: "${(metadata.text || '').substring(0, 50)}${metadata.text && metadata.text.length > 50 ? '...' : ''}"`);
+        // console.log(`   🗄️  Cache size: ${this.cache.size}/${this.maxCacheSize}`);
         
         // Clean up if cache is too large
         this.cleanup();
@@ -69,21 +69,21 @@ class AudioCache {
         const audioData = this.cache.get(audioId);
         
         if (!audioData) {
-            console.log(`❌ [AUDIO CACHE] Audio not found: ${audioId}`);
+            // console.log(`❌ [AUDIO CACHE] Audio not found: ${audioId}`);
             return null;
         }
         
         // Check if expired
         const age = Date.now() - audioData.timestamp;
         if (age > this.maxAge) {
-            console.log(`⏰ [AUDIO CACHE] Audio expired: ${audioId} (age: ${Math.round(age / 1000)}s)`);
+            // console.log(`⏰ [AUDIO CACHE] Audio expired: ${audioId} (age: ${Math.round(age / 1000)}s)`);
             this.cache.delete(audioId);
             return null;
         }
         
-        console.log(`✅ [AUDIO CACHE] Retrieved audio: ${audioId}`);
-        console.log(`   📊 Size: ${audioData.buffer.length} bytes`);
-        console.log(`   ⏰ Age: ${Math.round(age / 1000)}s`);
+        // console.log(`✅ [AUDIO CACHE] Retrieved audio: ${audioId}`);
+        // console.log(`   📊 Size: ${audioData.buffer.length} bytes`);
+        // console.log(`   ⏰ Age: ${Math.round(age / 1000)}s`);
         
         return audioData;
     }
@@ -117,7 +117,7 @@ class AudioCache {
         }
         
         if (removedCount > 0) {
-            console.log(`🧹 [AUDIO CACHE] Cleaned up ${removedCount} entries, cache size: ${this.cache.size}`);
+            // console.log(`🧹 [AUDIO CACHE] Cleaned up ${removedCount} entries, cache size: ${this.cache.size}`);
         }
     }
     
@@ -129,7 +129,7 @@ class AudioCache {
             this.cleanup();
         }, 60000); // Clean up every minute
         
-        console.log(`⏰ [AUDIO CACHE] Started cleanup interval (60s)`);
+        // console.log(`⏰ [AUDIO CACHE] Started cleanup interval (60s)`);
     }
     
     /**
@@ -179,7 +179,7 @@ class AudioCache {
     clear() {
         const count = this.cache.size;
         this.cache.clear();
-        console.log(`🗑️  [AUDIO CACHE] Cleared ${count} entries`);
+        // console.log(`🗑️  [AUDIO CACHE] Cleared ${count} entries`);
     }
 }
 

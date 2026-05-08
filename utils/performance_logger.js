@@ -21,12 +21,12 @@ class PerformanceLogger {
             critical: 10000     // > 10s
         };
         
-        console.log(`⏱️  [PERFORMANCE LOGGER] Initialized with timing thresholds:`);
-        console.log(`   🏆 Excellent: <${this.performanceThresholds.excellent}ms`);
-        console.log(`   ✅ Good: <${this.performanceThresholds.good}ms`);
-        console.log(`   ⚠️  Acceptable: <${this.performanceThresholds.acceptable}ms`);
-        console.log(`   🐌 Poor: <${this.performanceThresholds.poor}ms`);
-        console.log(`   🚨 Critical: >${this.performanceThresholds.critical}ms`);
+        // console.log(`⏱️  [PERFORMANCE LOGGER] Initialized with timing thresholds:`);
+        // console.log(`   🏆 Excellent: <${this.performanceThresholds.excellent}ms`);
+        // console.log(`   ✅ Good: <${this.performanceThresholds.good}ms`);
+        // console.log(`   ⚠️  Acceptable: <${this.performanceThresholds.acceptable}ms`);
+        // console.log(`   🐌 Poor: <${this.performanceThresholds.poor}ms`);
+        // console.log(`   🚨 Critical: >${this.performanceThresholds.critical}ms`);
     }
 
     /**
@@ -65,11 +65,11 @@ class PerformanceLogger {
         this.sessions.set(callSid, session);
         this.globalMetrics.totalCalls++;
         
-        console.log(`\n${"═".repeat(80)}`);
-        console.log(`⏱️  [PERFORMANCE SESSION] ${callSid} | Phone: ${callerPhone || 'Unknown'}`);
-        console.log(`🕐 Session Started: ${new Date().toLocaleString()}`);
-        console.log(`📊 High-Resolution Timer: ${sessionStart.toFixed(3)}ms`);
-        console.log(`${"═".repeat(80)}\n`);
+        // console.log(`\n${"═".repeat(80)}`);
+        // console.log(`⏱️  [PERFORMANCE SESSION] ${callSid} | Phone: ${callerPhone || 'Unknown'}`);
+        // console.log(`🕐 Session Started: ${new Date().toLocaleString()}`);
+        // console.log(`📊 High-Resolution Timer: ${sessionStart.toFixed(3)}ms`);
+        // console.log(`${"═".repeat(80)}\n`);
         
         return session;
     }
@@ -131,9 +131,9 @@ class PerformanceLogger {
         session.metrics.totalTurns++;
         this.globalMetrics.totalTurns++;
         
-        console.log(`🔄 [TURN ${turnNumber}] STARTED | ${callSid}`);
-        console.log(`   ⏱️  Turn Start: ${turnStart.toFixed(3)}ms`);
-        console.log(`   📍 Context: ${JSON.stringify(context)}`);
+        // console.log(`🔄 [TURN ${turnNumber}] STARTED | ${callSid}`);
+        // console.log(`   ⏱️  Turn Start: ${turnStart.toFixed(3)}ms`);
+        // console.log(`   📍 Context: ${JSON.stringify(context)}`);
         
         return turn;
     }
@@ -164,11 +164,11 @@ class PerformanceLogger {
         session.services.stt.calls++;
         if (error) session.services.stt.errors++;
         
-        const status = error ? '❌' : '✅';
-        console.log(`🎧 [STT] ${status} Turn ${turn.turnNumber} | Duration: ${duration.toFixed(0)}ms`);
-        console.log(`   📝 Transcription: "${transcription || 'N/A'}"`);
-        console.log(`   🎯 Confidence: ${confidence ? (confidence * 100).toFixed(1) : 'N/A'}%`);
-        if (error) console.log(`   ⚠️  Error: ${error}`);
+        // const status = error ? '❌' : '✅';
+        // console.log(`🎧 [STT] ${status} Turn ${turn.turnNumber} | Duration: ${duration.toFixed(0)}ms`);
+        // console.log(`   📝 Transcription: "${transcription || 'N/A'}"`);
+        // console.log(`   🎯 Confidence: ${confidence ? (confidence * 100).toFixed(1) : 'N/A'}%`);
+        // if (error) console.log(`   ⚠️  Error: ${error}`);
     }
 
     /**
@@ -198,10 +198,10 @@ class PerformanceLogger {
         session.services.llm.calls++;
         if (error) session.services.llm.errors++;
         
-        const status = error ? '❌' : '✅';
-        console.log(`🧠 [LLM] ${status} Turn ${turn.turnNumber} | Duration: ${duration.toFixed(0)}ms`);
-        console.log(`   🎯 Tokens: ${tokens || 'N/A'} | Cost: ₹${(cost || 0).toFixed(4)}`);
-        if (error) console.log(`   ⚠️  Error: ${error}`);
+        // const status = error ? '❌' : '✅';
+        // console.log(`🧠 [LLM] ${status} Turn ${turn.turnNumber} | Duration: ${duration.toFixed(0)}ms`);
+        // console.log(`   🎯 Tokens: ${tokens || 'N/A'} | Cost: ₹${(cost || 0).toFixed(4)}`);
+        // if (error) console.log(`   ⚠️  Error: ${error}`);
     }
 
     /**
@@ -232,11 +232,11 @@ class PerformanceLogger {
         session.services.tts.calls++;
         if (error) session.services.tts.errors++;
         
-        const status = error ? '❌' : '✅';
-        const sizeKB = audioSize ? (audioSize / 1024).toFixed(1) : 'N/A';
-        console.log(`🎤 [TTS] ${status} ${service} | Turn ${turn.turnNumber} | Duration: ${duration.toFixed(0)}ms`);
-        console.log(`   📊 Audio: ${sizeKB}KB | Cost: ₹${(cost || 0).toFixed(4)}`);
-        if (error) console.log(`   ⚠️  Error: ${error}`);
+        // const status = error ? '❌' : '✅';
+        // const sizeKB = audioSize ? (audioSize / 1024).toFixed(1) : 'N/A';
+        // console.log(`🎤 [TTS] ${status} ${service} | Turn ${turn.turnNumber} | Duration: ${duration.toFixed(0)}ms`);
+        // console.log(`   📊 Audio: ${sizeKB}KB | Cost: ₹${(cost || 0).toFixed(4)}`);
+        // if (error) console.log(`   ⚠️  Error: ${error}`);
     }
 
     /**
@@ -261,9 +261,9 @@ class PerformanceLogger {
         session.services.api.calls++;
         if (error) session.services.api.errors++;
         
-        const status = error ? '❌' : '✅';
-        console.log(`🌐 [API] ${status} ${endpoint || 'Unknown'} | Turn ${turn.turnNumber} | Duration: ${duration.toFixed(0)}ms`);
-        if (error) console.log(`   ⚠️  Error: ${error}`);
+        // const status = error ? '❌' : '✅';
+        // console.log(`🌐 [API] ${status} ${endpoint || 'Unknown'} | Turn ${turn.turnNumber} | Duration: ${duration.toFixed(0)}ms`);
+        // if (error) console.log(`   ⚠️  Error: ${error}`);
     }
 
     /**
@@ -281,7 +281,7 @@ class PerformanceLogger {
             session.metrics.timeouts++;
         }
         
-        console.log(`🔇 [SILENCE] Turn ${turn.turnNumber} | Duration: ${silenceDuration.toFixed(0)}ms | Reason: ${reason}`);
+        // console.log(`🔇 [SILENCE] Turn ${turn.turnNumber} | Duration: ${silenceDuration.toFixed(0)}ms | Reason: ${reason}`);
     }
 
     /**
@@ -394,31 +394,31 @@ class PerformanceLogger {
      * Log detailed turn summary
      */
     logTurnSummary(callSid, turn) {
-        const grade = turn.performance.grade;
-        const gradeEmoji = {
-            'A+': '🏆', 'A': '✅', 'B': '⚠️', 'C': '🐌', 'D': '🚨', 'F': '💥'
-        }[grade] || '❓';
+        // const grade = turn.performance.grade;
+        // const gradeEmoji = {
+        //     'A+': '🏆', 'A': '✅', 'B': '⚠️', 'C': '🐌', 'D': '🚨', 'F': '💥'
+        // }[grade] || '❓';
         
-        console.log(`\n⏱️  [TURN ${turn.turnNumber}] COMPLETED | Grade: ${gradeEmoji} ${grade}`);
-        console.log(`   📊 Total Time: ${turn.totalTurnTime.toFixed(0)}ms`);
-        console.log(`   🔍 Breakdown:`);
-        console.log(`      🎧 STT: ${turn.services.stt.duration.toFixed(0)}ms`);
-        console.log(`      🧠 LLM: ${turn.services.llm.duration.toFixed(0)}ms`);
-        console.log(`      🎤 TTS: ${turn.services.tts.duration.toFixed(0)}ms`);
-        console.log(`      🌐 API: ${turn.services.api.duration.toFixed(0)}ms`);
+        // console.log(`\n⏱️  [TURN ${turn.turnNumber}] COMPLETED | Grade: ${gradeEmoji} ${grade}`);
+        // console.log(`   📊 Total Time: ${turn.totalTurnTime.toFixed(0)}ms`);
+        // console.log(`   🔍 Breakdown:`);
+        // console.log(`      🎧 STT: ${turn.services.stt.duration.toFixed(0)}ms`);
+        // console.log(`      🧠 LLM: ${turn.services.llm.duration.toFixed(0)}ms`);
+        // console.log(`      🎤 TTS: ${turn.services.tts.duration.toFixed(0)}ms`);
+        // console.log(`      🌐 API: ${turn.services.api.duration.toFixed(0)}ms`);
         
-        if (turn.performance.bottleneck !== 'unknown') {
-            console.log(`   🎯 Bottleneck: ${turn.performance.bottleneck.toUpperCase()}`);
-        }
+        // if (turn.performance.bottleneck !== 'unknown') {
+        //     console.log(`   🎯 Bottleneck: ${turn.performance.bottleneck.toUpperCase()}`);
+        // }
         
-        if (turn.performance.recommendations.length > 0) {
-            console.log(`   💡 Recommendations:`);
-            turn.performance.recommendations.forEach(rec => {
-                console.log(`      • ${rec}`);
-            });
-        }
+        // if (turn.performance.recommendations.length > 0) {
+        //     console.log(`   💡 Recommendations:`);
+        //     turn.performance.recommendations.forEach(rec => {
+        //         console.log(`      • ${rec}`);
+        //     });
+        // }
         
-        console.log(`${"─".repeat(60)}\n`);
+        // console.log(`${"─".repeat(60)}\n`);
     }
 
     /**
@@ -432,33 +432,33 @@ class PerformanceLogger {
         session.sessionEnd = sessionEnd;
         session.totalDuration = sessionEnd - session.sessionStart;
         
-        console.log(`\n${"═".repeat(80)}`);
-        console.log(`⏱️  [PERFORMANCE REPORT] ${callSid} | Outcome: ${outcome.toUpperCase()}`);
-        console.log(`🕐 Total Duration: ${(session.totalDuration / 1000).toFixed(1)}s`);
-        console.log(`🔄 Turns: ${session.metrics.totalTurns}`);
-        console.log(`📊 Avg Response: ${session.metrics.averageResponseTime.toFixed(0)}ms`);
-        console.log(`${"═".repeat(80)}`);
+        // console.log(`\n${"═".repeat(80)}`);
+        // console.log(`⏱️  [PERFORMANCE REPORT] ${callSid} | Outcome: ${outcome.toUpperCase()}`);
+        // console.log(`🕐 Total Duration: ${(session.totalDuration / 1000).toFixed(1)}s`);
+        // console.log(`🔄 Turns: ${session.metrics.totalTurns}`);
+        // console.log(`📊 Avg Response: ${session.metrics.averageResponseTime.toFixed(0)}ms`);
+        // console.log(`${"═".repeat(80)}`);
         
-        // Performance summary
-        console.log(`\n🏆 [PERFORMANCE SUMMARY]`);
-        console.log(`   ⚡ Fastest Turn: ${session.metrics.fastestTurn.toFixed(0)}ms`);
-        console.log(`   🐌 Slowest Turn: ${session.metrics.slowestTurn.toFixed(0)}ms`);
-        console.log(`   ⏰ Total Processing: ${(session.metrics.totalProcessingTime / 1000).toFixed(1)}s`);
-        console.log(`   🔇 Total Silence: ${(session.metrics.totalSilenceTime / 1000).toFixed(1)}s`);
-        console.log(`   ⏱️  Timeouts: ${session.metrics.timeouts}`);
-        console.log(`   ❌ Errors: ${session.metrics.errors}`);
+        // // Performance summary
+        // console.log(`\n🏆 [PERFORMANCE SUMMARY]`);
+        // console.log(`   ⚡ Fastest Turn: ${session.metrics.fastestTurn.toFixed(0)}ms`);
+        // console.log(`   🐌 Slowest Turn: ${session.metrics.slowestTurn.toFixed(0)}ms`);
+        // console.log(`   ⏰ Total Processing: ${(session.metrics.totalProcessingTime / 1000).toFixed(1)}s`);
+        // console.log(`   🔇 Total Silence: ${(session.metrics.totalSilenceTime / 1000).toFixed(1)}s`);
+        // console.log(`   ⏱️  Timeouts: ${session.metrics.timeouts}`);
+        // console.log(`   ❌ Errors: ${session.metrics.errors}`);
         
-        // Service breakdown
-        console.log(`\n🔧 [SERVICE BREAKDOWN]`);
-        Object.entries(session.services).forEach(([service, metrics]) => {
-            if (metrics.calls > 0) {
-                const avgTime = metrics.totalTime / metrics.calls;
-                const errorRate = (metrics.errors / metrics.calls * 100).toFixed(1);
-                console.log(`   ${service.toUpperCase()}: ${avgTime.toFixed(0)}ms avg | ${metrics.calls} calls | ${errorRate}% errors`);
-            }
-        });
+        // // Service breakdown
+        // console.log(`\n🔧 [SERVICE BREAKDOWN]`);
+        // Object.entries(session.services).forEach(([service, metrics]) => {
+        //     if (metrics.calls > 0) {
+        //         const avgTime = metrics.totalTime / metrics.calls;
+        //         const errorRate = (metrics.errors / metrics.calls * 100).toFixed(1);
+        //         console.log(`   ${service.toUpperCase()}: ${avgTime.toFixed(0)}ms avg | ${metrics.calls} calls | ${errorRate}% errors`);
+        //     }
+        // });
         
-        console.log(`${"═".repeat(80)}\n`);
+        // console.log(`${"═".repeat(80)}\n`);
         
         // Mark session as ended
         session.outcome = outcome;

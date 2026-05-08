@@ -11,9 +11,9 @@
  * @returns {Buffer} WAV formatted audio buffer
  */
 export function convertPCMToWAV(pcmBuffer, sampleRate = 22050, channels = 1) {
-    console.log(`🔄 [AUDIO CONVERTER] Converting PCM to WAV`);
-    console.log(`   📊 Input: ${pcmBuffer.length} bytes PCM f32le`);
-    console.log(`   🎵 Sample Rate: ${sampleRate}Hz, Channels: ${channels}`);
+    // console.log(`🔄 [AUDIO CONVERTER] Converting PCM to WAV`);
+    // console.log(`   📊 Input: ${pcmBuffer.length} bytes PCM f32le`);
+    // console.log(`   🎵 Sample Rate: ${sampleRate}Hz, Channels: ${channels}`);
     
     // Convert f32le PCM to 16-bit PCM for WAV compatibility
     const pcm16Buffer = convertF32LEtoPCM16(pcmBuffer);
@@ -51,8 +51,8 @@ export function convertPCMToWAV(pcmBuffer, sampleRate = 22050, channels = 1) {
     // Combine header and audio data
     const wavBuffer = Buffer.concat([wavHeader, pcm16Buffer]);
     
-    console.log(`   ✅ Output: ${wavBuffer.length} bytes WAV`);
-    console.log(`   📈 Compression: ${((pcmBuffer.length - wavBuffer.length) / pcmBuffer.length * 100).toFixed(1)}% size change`);
+    // console.log(`   ✅ Output: ${wavBuffer.length} bytes WAV`);
+    // console.log(`   📈 Compression: ${((pcmBuffer.length - wavBuffer.length) / pcmBuffer.length * 100).toFixed(1)}% size change`);
     
     return wavBuffer;
 }
@@ -63,7 +63,7 @@ export function convertPCMToWAV(pcmBuffer, sampleRate = 22050, channels = 1) {
  * @returns {Buffer} 16-bit integer PCM buffer
  */
 function convertF32LEtoPCM16(f32Buffer) {
-    console.log(`🔄 [AUDIO CONVERTER] Converting f32le to PCM16`);
+    // console.log(`🔄 [AUDIO CONVERTER] Converting f32le to PCM16`);
     
     const floatArray = new Float32Array(f32Buffer.buffer, f32Buffer.byteOffset, f32Buffer.length / 4);
     const pcm16Buffer = Buffer.alloc(floatArray.length * 2);
@@ -75,7 +75,7 @@ function convertF32LEtoPCM16(f32Buffer) {
         pcm16Buffer.writeInt16LE(intValue, i * 2);
     }
     
-    console.log(`   📊 Converted ${floatArray.length} float samples to ${pcm16Buffer.length} bytes PCM16`);
+    // console.log(`   📊 Converted ${floatArray.length} float samples to ${pcm16Buffer.length} bytes PCM16`);
     
     return pcm16Buffer;
 }
@@ -87,20 +87,20 @@ function convertF32LEtoPCM16(f32Buffer) {
  */
 export function validateAudioBuffer(audioBuffer) {
     if (!Buffer.isBuffer(audioBuffer)) {
-        console.log(`❌ [AUDIO VALIDATOR] Not a buffer`);
+        // console.log(`❌ [AUDIO VALIDATOR] Not a buffer`);
         return false;
     }
     
     if (audioBuffer.length === 0) {
-        console.log(`❌ [AUDIO VALIDATOR] Empty buffer`);
+        // console.log(`❌ [AUDIO VALIDATOR] Empty buffer`);
         return false;
     }
     
-    if (audioBuffer.length < 1000) {
-        console.log(`⚠️  [AUDIO VALIDATOR] Very small buffer (${audioBuffer.length} bytes)`);
-    }
+    // if (audioBuffer.length < 1000) {
+    //     console.log(`⚠️  [AUDIO VALIDATOR] Very small buffer (${audioBuffer.length} bytes)`);
+    // }
     
-    console.log(`✅ [AUDIO VALIDATOR] Valid audio buffer (${audioBuffer.length} bytes)`);
+    // console.log(`✅ [AUDIO VALIDATOR] Valid audio buffer (${audioBuffer.length} bytes)`);
     return true;
 }
 
@@ -116,7 +116,7 @@ export function getAudioDuration(wavBuffer, sampleRate = 22050) {
     const sampleCount = audioDataSize / 2;
     const duration = sampleCount / sampleRate;
     
-    console.log(`📊 [AUDIO INFO] Duration: ${duration.toFixed(2)}s (${sampleCount} samples)`);
+    // console.log(`📊 [AUDIO INFO] Duration: ${duration.toFixed(2)}s (${sampleCount} samples)`);
     
     return duration;
 }

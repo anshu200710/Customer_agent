@@ -37,10 +37,10 @@ class ServiceLogger {
         this.sessionLogs.set(callSid, session);
         this.globalStats.total_calls++;
         
-        console.log(`\n${"═".repeat(80)}`);
-        console.log(`📞 [SESSION START] ${callSid} | Phone: ${callerPhone || 'Unknown'}`);
-        console.log(`🕐 Started at: ${new Date().toLocaleString()}`);
-        console.log(`${"═".repeat(80)}\n`);
+        // console.log(`\n${"═".repeat(80)}`);
+        // console.log(`📞 [SESSION START] ${callSid} | Phone: ${callerPhone || 'Unknown'}`);
+        // console.log(`🕐 Started at: ${new Date().toLocaleString()}`);
+        // console.log(`${"═".repeat(80)}\n`);
         
         return session;
     }
@@ -78,19 +78,19 @@ class ServiceLogger {
         }
 
         // Enhanced console logging
-        const status = logEntry.success ? '✅' : '❌';
-        const latency = logEntry.latency_ms ? `${logEntry.latency_ms}ms` : 'N/A';
-        const tokens = logEntry.tokens_used ? `${logEntry.tokens_used}t` : 'N/A';
-        const cost = logEntry.cost_estimate ? `₹${logEntry.cost_estimate.toFixed(4)}` : 'N/A';
+        // const status = logEntry.success ? '✅' : '❌';
+        // const latency = logEntry.latency_ms ? `${logEntry.latency_ms}ms` : 'N/A';
+        // const tokens = logEntry.tokens_used ? `${logEntry.tokens_used}t` : 'N/A';
+        // const cost = logEntry.cost_estimate ? `₹${logEntry.cost_estimate.toFixed(4)}` : 'N/A';
         
-        console.log(`🧠 [LLM] ${status} ${service.toUpperCase()} | Model: ${model} | Turn: ${logEntry.turn}`);
-        console.log(`   📊 Latency: ${latency} | Tokens: ${tokens} | Cost: ${cost}`);
-        console.log(`   📝 Prompt: ${this.truncateText(prompt, 100)}`);
-        console.log(`   💬 Response: ${this.truncateText(response, 100)}`);
-        if (logEntry.error) {
-            console.log(`   ⚠️  Error: ${logEntry.error}`);
-        }
-        console.log('');
+        // console.log(`🧠 [LLM] ${status} ${service.toUpperCase()} | Model: ${model} | Turn: ${logEntry.turn}`);
+        // console.log(`   📊 Latency: ${latency} | Tokens: ${tokens} | Cost: ${cost}`);
+        // console.log(`   📝 Prompt: ${this.truncateText(prompt, 100)}`);
+        // console.log(`   💬 Response: ${this.truncateText(response, 100)}`);
+        // if (logEntry.error) {
+        //     console.log(`   ⚠️  Error: ${logEntry.error}`);
+        // }
+        // console.log('');
     }
 
     /**
@@ -127,19 +127,19 @@ class ServiceLogger {
         }
 
         // Enhanced console logging
-        const status = logEntry.success ? '✅' : '❌';
-        const latency = logEntry.latency_ms ? `${logEntry.latency_ms}ms` : 'N/A';
-        const audioSize = logEntry.audio_bytes ? `${(logEntry.audio_bytes / 1024).toFixed(1)}KB` : 'N/A';
-        const cost = logEntry.cost_estimate ? `₹${logEntry.cost_estimate.toFixed(4)}` : 'N/A';
+        // const status = logEntry.success ? '✅' : '❌';
+        // const latency = logEntry.latency_ms ? `${logEntry.latency_ms}ms` : 'N/A';
+        // const audioSize = logEntry.audio_bytes ? `${(logEntry.audio_bytes / 1024).toFixed(1)}KB` : 'N/A';
+        // const cost = logEntry.cost_estimate ? `₹${logEntry.cost_estimate.toFixed(4)}` : 'N/A';
         
-        console.log(`🎤 [TTS] ${status} ${service.toUpperCase()} | Voice: ${voice} | Turn: ${logEntry.turn}`);
-        console.log(`   📊 Latency: ${latency} | Audio: ${audioSize} | Cost: ${cost}`);
-        console.log(`   🎭 Emotion: ${logEntry.emotion} | Context: ${logEntry.context}`);
-        console.log(`   📝 Text: ${this.truncateText(text, 100)}`);
-        if (logEntry.error) {
-            console.log(`   ⚠️  Error: ${logEntry.error}`);
-        }
-        console.log('');
+        // console.log(`🎤 [TTS] ${status} ${service.toUpperCase()} | Voice: ${voice} | Turn: ${logEntry.turn}`);
+        // console.log(`   📊 Latency: ${latency} | Audio: ${audioSize} | Cost: ${cost}`);
+        // console.log(`   🎭 Emotion: ${logEntry.emotion} | Context: ${logEntry.context}`);
+        // console.log(`   📝 Text: ${this.truncateText(text, 100)}`);
+        // if (logEntry.error) {
+        //     console.log(`   ⚠️  Error: ${logEntry.error}`);
+        // }
+        // console.log('');
     }
 
     /**
@@ -174,19 +174,19 @@ class ServiceLogger {
         }
 
         // Enhanced console logging
-        const status = logEntry.success ? '✅' : '❌';
-        const latency = logEntry.latency_ms ? `${logEntry.latency_ms}ms` : 'N/A';
-        const confidence = logEntry.confidence ? `${(logEntry.confidence * 100).toFixed(1)}%` : 'N/A';
-        const duration = logEntry.audio_duration ? `${logEntry.audio_duration.toFixed(1)}s` : 'N/A';
-        const cost = logEntry.cost_estimate ? `₹${logEntry.cost_estimate.toFixed(4)}` : 'N/A';
+        // const status = logEntry.success ? '✅' : '❌';
+        // const latency = logEntry.latency_ms ? `${logEntry.latency_ms}ms` : 'N/A';
+        // const confidence = logEntry.confidence ? `${(logEntry.confidence * 100).toFixed(1)}%` : 'N/A';
+        // const duration = logEntry.audio_duration ? `${logEntry.audio_duration.toFixed(1)}s` : 'N/A';
+        // const cost = logEntry.cost_estimate ? `₹${logEntry.cost_estimate.toFixed(4)}` : 'N/A';
         
-        console.log(`🎧 [STT] ${status} ${service.toUpperCase()} | Turn: ${logEntry.turn}`);
-        console.log(`   📊 Latency: ${latency} | Duration: ${duration} | Confidence: ${confidence} | Cost: ${cost}`);
-        console.log(`   📝 Transcription: ${this.truncateText(transcription, 100)}`);
-        if (logEntry.error) {
-            console.log(`   ⚠️  Error: ${logEntry.error}`);
-        }
-        console.log('');
+        // console.log(`🎧 [STT] ${status} ${service.toUpperCase()} | Turn: ${logEntry.turn}`);
+        // console.log(`   📊 Latency: ${latency} | Duration: ${duration} | Confidence: ${confidence} | Cost: ${cost}`);
+        // console.log(`   📝 Transcription: ${this.truncateText(transcription, 100)}`);
+        // if (logEntry.error) {
+        //     console.log(`   ⚠️  Error: ${logEntry.error}`);
+        // }
+        // console.log('');
     }
 
     /**
@@ -199,8 +199,8 @@ class ServiceLogger {
         session.turnCount++;
         this.globalStats.total_turns++;
 
-        console.log(`🔄 [TURN ${session.turnCount}] Completed | Total Cost: ₹${session.totalCost.toFixed(4)}`);
-        console.log(`${"─".repeat(60)}\n`);
+        // console.log(`🔄 [TURN ${session.turnCount}] Completed | Total Cost: ₹${session.totalCost.toFixed(4)}`);
+        // console.log(`${"─".repeat(60)}\n`);
     }
 
     /**
@@ -212,47 +212,47 @@ class ServiceLogger {
 
         const duration = (Date.now() - session.startTime) / 1000;
         
-        console.log(`\n${"═".repeat(80)}`);
-        console.log(`📞 [SESSION END] ${callSid} | Outcome: ${outcome.toUpperCase()}`);
-        console.log(`🕐 Duration: ${duration.toFixed(1)}s | Turns: ${session.turnCount} | Total Cost: ₹${session.totalCost.toFixed(4)}`);
-        console.log(`${"═".repeat(80)}`);
+        // console.log(`\n${"═".repeat(80)}`);
+        // console.log(`📞 [SESSION END] ${callSid} | Outcome: ${outcome.toUpperCase()}`);
+        // console.log(`🕐 Duration: ${duration.toFixed(1)}s | Turns: ${session.turnCount} | Total Cost: ₹${session.totalCost.toFixed(4)}`);
+        // console.log(`${"═".repeat(80)}`);
         
-        // Service usage summary
-        console.log(`\n📊 [SERVICE USAGE SUMMARY]`);
+        // // Service usage summary
+        // console.log(`\n📊 [SERVICE USAGE SUMMARY]`);
         
-        if (session.services.llm.length > 0) {
-            const llmServices = this.groupByService(session.services.llm);
-            console.log(`🧠 LLM Services:`);
-            Object.entries(llmServices).forEach(([service, count]) => {
-                console.log(`   ${service.toUpperCase()}: ${count} calls`);
-            });
-        }
+        // if (session.services.llm.length > 0) {
+        //     const llmServices = this.groupByService(session.services.llm);
+        //     console.log(`🧠 LLM Services:`);
+        //     Object.entries(llmServices).forEach(([service, count]) => {
+        //         console.log(`   ${service.toUpperCase()}: ${count} calls`);
+        //     });
+        // }
         
-        if (session.services.tts.length > 0) {
-            const ttsServices = this.groupByService(session.services.tts);
-            console.log(`🎤 TTS Services:`);
-            Object.entries(ttsServices).forEach(([service, count]) => {
-                console.log(`   ${service.toUpperCase()}: ${count} calls`);
-            });
-        }
+        // if (session.services.tts.length > 0) {
+        //     const ttsServices = this.groupByService(session.services.tts);
+        //     console.log(`🎤 TTS Services:`);
+        //     Object.entries(ttsServices).forEach(([service, count]) => {
+        //         console.log(`   ${service.toUpperCase()}: ${count} calls`);
+        //     });
+        // }
         
-        if (session.services.stt.length > 0) {
-            const sttServices = this.groupByService(session.services.stt);
-            console.log(`🎧 STT Services:`);
-            Object.entries(sttServices).forEach(([service, count]) => {
-                console.log(`   ${service.toUpperCase()}: ${count} calls`);
-            });
-        }
+        // if (session.services.stt.length > 0) {
+        //     const sttServices = this.groupByService(session.services.stt);
+        //     console.log(`🎧 STT Services:`);
+        //     Object.entries(sttServices).forEach(([service, count]) => {
+        //         console.log(`   ${service.toUpperCase()}: ${count} calls`);
+        //     });
+        // }
         
-        // Error summary
-        if (session.errors.length > 0) {
-            console.log(`\n⚠️  [ERRORS] ${session.errors.length} errors occurred:`);
-            session.errors.forEach((error, i) => {
-                console.log(`   ${i + 1}. ${error}`);
-            });
-        }
+        // // Error summary
+        // if (session.errors.length > 0) {
+        //     console.log(`\n⚠️  [ERRORS] ${session.errors.length} errors occurred:`);
+        //     session.errors.forEach((error, i) => {
+        //         console.log(`   ${i + 1}. ${error}`);
+        //     });
+        // }
         
-        console.log(`${"═".repeat(80)}\n`);
+        // console.log(`${"═".repeat(80)}\n`);
         
         // Keep session for analytics but mark as ended
         session.endTime = Date.now();
