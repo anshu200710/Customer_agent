@@ -189,6 +189,7 @@ function buildMinimalStateSummary(collectionStatus, currentState) {
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    
    Only sends loop prevention for fields that are ALREADY collected
+   CRITICAL: Prevents AI from asking for already collected data
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 function buildDynamicLoopPrevention(collectionStatus) {
     const collected = collectionStatus.collected;
@@ -197,12 +198,35 @@ function buildDynamicLoopPrevention(collectionStatus) {
         return ''; // Nothing collected yet, no loop prevention needed
     }
     
-    const fieldNames = collected.map(item => item.key).join(', ');
+    // Build detailed list of collected fields with their values
+    const collectedDetails = collected.map(item => {
+        const fieldName = item.key === 'machine_no' ? 'machine number' :
+                         item.key === 'complaint_title' ? 'complaint' :
+                         item.key === 'machine_status' ? 'machine status' :
+                         item.key === 'city' ? 'city' :
+                         item.key === 'customer_phone' ? 'phone number' : item.key;
+        return `${fieldName} (${item.value})`;
+    }).join(', ');
     
     return `
-=== 🚫 ALREADY HAVE: ${fieldNames} ===
-If customer repeats: "Yeh mil gaya. [Ask next field]"
-Do NOT ask for these again.
+=== 🚫 CRITICAL - ALREADY COLLECTED: ${collectedDetails} ===
+
+**ABSOLUTE RULES:**
+1. NEVER ask for these fields again - they are already collected
+2. If customer mentions these fields, acknowledge: "Yeh mil gaya"
+3. If customer wants to CHANGE/CORRECT, use update_* functions
+4. Move to NEXT missing field immediately
+
+**EXAMPLES:**
+- Customer: "Phone number 9876543210" → "Yeh mil gaya. [Next field]?"
+- Customer: "Machine 12345" → "Yeh mil gaya. [Next field]?"
+- Customer: "Phone galat hai" → Call update_phone_number()
+
+**DO NOT:**
+- Ask "Aapka phone number?" if phone is already collected
+- Ask "Machine number?" if machine_no is already collected
+- Ask "Kya problem hai?" if complaint_title is already collected
+- Ask "Kaunse shahar?" if city is already collected
 `;
 }
 

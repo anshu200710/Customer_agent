@@ -938,8 +938,9 @@ export function extractAllData(text, cur = {}) {
         }
     }
 
-    // ── City (Devanagari + English + Rajasthani variants) ─────────
+    // ── City (STRICT: Only Rajasthan cities from SERVICE_CENTERS) ─────────
     if (!cur.city) {
+        // First check Devanagari/Hindi city names (ONLY Rajasthan cities)
         const DEVA_MAP = {
             "भीलवाड़ा": "BHILWARA", "बड़ी": "BHILWARA", "जयपुर": "JAIPUR", "अजमेर": "AJMER",
             "अलवर": "ALWAR", "जोधपुर": "JODHPUR", "उदयपुर": "UDAIPUR",
@@ -957,13 +958,42 @@ export function extractAllData(text, cur = {}) {
             "सुजानगढ़": "SUJANGARH", "कोटपूतली": "KOTPUTLI", "भिवाड़ी": "BHIWADI",
             "रामगंज मंडी": "RAMGANJMANDI", "रामगंज": "RAMGANJMANDI",
         };
+        
+        // Check Devanagari first
         for (const [d, l] of Object.entries(DEVA_MAP)) {
-            if (text.includes(d)) { ex.city = l; break; }
+            if (text.includes(d)) { 
+                ex.city = l; 
+                break; 
+            }
         }
+        
+        // Then check English/transliterated names (STRICT: only exact matches from SERVICE_CENTERS)
         if (!ex.city) {
             const sorted = [...SERVICE_CENTERS].sort((a, b) => b.city_name.length - a.city_name.length);
             for (const c of sorted) {
-                if (lo.includes(c.city_name.toLowerCase())) { ex.city = c.city_name; break; }
+                // STRICT: Only match if city name appears as a complete word
+                const cityPattern = new RegExp(`\\b${c.city_name.toLowerCase()}\\b`, 'i');
+                if (cityPattern.test(lo)) { 
+                    ex.city = c.city_name; 
+                    break; 
+                }
+            }
+        }
+        
+        // REJECT non-Rajasthan cities explicitly
+        const NON_RAJASTHAN_CITIES = [
+            "गाजियाबाद", "ghaziabad", "noida", "नोएडा", "delhi", "दिल्ली",
+            "मुंबई", "mumbai", "pune", "पुणे", "bangalore", "बैंगलोर",
+            "लोनी", "loni", "मेरठ", "meerut", "आगरा", "agra",
+            "lucknow", "लखनऊ", "kanpur", "कानपुर", "varanasi", "वाराणसी",
+            "uttar pradesh", "उत्तर प्रदेश", "up", "यूपी"
+        ];
+        
+        for (const nonRaj of NON_RAJASTHAN_CITIES) {
+            if (lo.includes(nonRaj) || text.includes(nonRaj)) {
+                // Clear any wrongly extracted city
+                ex.city = null;
+                break;
             }
         }
     }

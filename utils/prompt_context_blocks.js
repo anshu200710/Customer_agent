@@ -84,12 +84,21 @@ Options: "Breakdown" (band/khadi) OR "Running With Problem" (chal rahi)
 Function: capture_machine_status(machine_status="Breakdown")`;
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🗺️ STATE 5: COLLECT CITY (MINIMAL)
+   🗺️ STATE 5: COLLECT CITY (STRICT - RAJASTHAN ONLY)
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export const CITY_CONTEXT = `
-=== 🎯 TASK: Get City ===
-Ask: "Aap kaunse shahar mein hain?"
-Valid: Jaipur, Kota, Ajmer, Udaipur, Bhilwara, Alwar, Sikar, etc.
+=== 🎯 TASK: Get Rajasthan City ONLY ===
+Ask: "Aap Rajasthan ke kaunse shahar mein hain?"
+Examples: "Jaipur, Kota, Ajmer, Udaipur, Bhilwara"
+
+**CRITICAL - RAJASTHAN ONLY:**
+• ONLY accept cities in Rajasthan state
+• If customer says non-Rajasthan city (Delhi, Ghaziabad, Noida, UP, etc.)
+  → Say: "Maaf kijiye, hum sirf Rajasthan mein service dete hain"
+  → Ask again: "Rajasthan ka kaunsa shahar?"
+• Valid: Jaipur, Kota, Ajmer, Udaipur, Bhilwara, Alwar, Sikar, Bikaner, Jodhpur, etc.
+• Invalid: Ghaziabad, Loni, Delhi, Noida, Meerut, Agra, Lucknow, etc.
+
 Function: capture_city(city="JAIPUR")`;
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

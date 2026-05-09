@@ -55,10 +55,8 @@ function getSmartSilencePrompt(callData) {
         
         // Don't reuse clarification questions (they cause loops)
         if (/ya nahi boliye|cancel kar dun|haan boliye to/i.test(lastQ)) {
-            // console.log(`   ⚠️ [SILENCE] Last question was clarification - not reusing`);
             // If in final confirmation state and user is silent after clarification, just submit
             if (callData.awaitingFinalConfirm && !missing) {
-                // console.log(`   ✅ [SILENCE] All data collected, user silent after clarification - will submit on next input`);
                 return "Complaint save kar raha hun. Ek second.";
             }
             // Otherwise fall through to generate proper question
@@ -72,7 +70,7 @@ function getSmartSilencePrompt(callData) {
                 questionMatchesCurrentField = true;
             } else if (missing === "machine_status" && /band|chal.*rahi|status|problem.*saath|breakdown|running/i.test(lastQ)) {
                 questionMatchesCurrentField = true;
-            } else if (missing === "city" && /shahar|city|kahan|kaunse|location/i.test(lastQ)) {
+            } else if (missing === "city" && /shahar|city|kahan|kaunse|location|rajasthan/i.test(lastQ)) {
                 questionMatchesCurrentField = true;
             } else if (missing === "customer_phone" && /phone|mobile|number.*10|contact/i.test(lastQ)) {
                 questionMatchesCurrentField = true;
@@ -83,20 +81,17 @@ function getSmartSilencePrompt(callData) {
             
             if (questionMatchesCurrentField) {
                 // Question matches current field - reuse it
-                // console.log(`   ✅ [SILENCE] Reusing last question (matches current field): "${lastQ}"`);
                 return lastQ;
             } else {
                 // Question doesn't match current field - generate new one
-                // console.log(`   ⚠️ [SILENCE] Last question doesn't match current field (${missing}) - generating new question`);
                 // Fall through to generate proper question
             }
         }
         // If it's a statement (like "complaint register kar rahi hun"), ignore it and generate proper question
-        // console.log(`   ⚠️ [SILENCE] Last question was a statement, generating proper question`);
     }
     
     if (justCompletedConfirmation) {
-        // console.log(`   ✅ [SILENCE] Just completed confirmation - generating fresh question for next field`);
+        // Just completed confirmation - generate fresh question for next field
     }
     
     // Determine what to ask based on missing fields
@@ -110,7 +105,8 @@ function getSmartSilencePrompt(callData) {
         return "Machine bilkul band hai ya problem ke saath chal rahi hai?";
     }
     if (missing === "city") {
-        return "Aap kaunse shahar mein hain? Jaipur, Kota, Ajmer, Udaipur?";
+        // STRICT: Only ask for Rajasthan cities
+        return "Aap Rajasthan ke kaunse shahar mein hain? Jaipur, Kota, Ajmer, Udaipur, Bhilwara?";
     }
     if (missing === "customer_phone") {
         return "Aapka mobile number? 10 digit ka number bataiye.";
@@ -921,7 +917,7 @@ router.post("/process", async (req, res) => {
             }
         }
 
-        // ── STEP 2: City match ──────────────────────────────────────
+        // ── STEP 2: City match (STRICT: Only Rajasthan cities) ──────────────────────────────────────
         if (callData.extractedData.city && !callData.extractedData.city_id) {
             const mc = matchServiceCenter(callData.extractedData.city);
             if (mc) {
@@ -950,6 +946,39 @@ router.post("/process", async (req, res) => {
                 }
                 
                 console.log(`   🗺️  ${mc.city_name} → ${mc.branch_name}`);
+            } else {
+                // City not found in service centers - clear it and ask again
+                console.warn(`   ❌ City "${callData.extractedData.city}" not found in Rajasthan service centers`);
+                callData.extractedData.city = null;
+                callData.extractedData.city_id = null;
+            }
+        }
+        
+        // ── STEP 2.5: Reject non-Rajasthan cities explicitly ──────────────────────────────────────
+        const NON_RAJASTHAN_PATTERNS = [
+            /गाजियाबाद|ghaziabad|noida|नोएडा/i,
+            /delhi|दिल्ली|मुंबई|mumbai/i,
+            /लोनी|loni|मेरठ|meerut/i,
+            /आगरा|agra|lucknow|लखनऊ/i,
+            /uttar pradesh|उत्तर प्रदेश|up|यूपी/i
+        ];
+        
+        for (const pattern of NON_RAJASTHAN_PATTERNS) {
+            if (pattern.test(userInput)) {
+                // User mentioned non-Rajasthan location - clear city and ask for Rajasthan city
+                if (callData.extractedData.city) {
+                    console.warn(`   ❌ Non-Rajasthan location detected: "${userInput}" - clearing city`);
+                    callData.extractedData.city = null;
+                    callData.extractedData.city_id = null;
+                }
+                
+                // Ask for Rajasthan city specifically
+                const prompt = "Maaf kijiye, hum sirf Rajasthan mein service dete hain. Rajasthan ka kaunsa shahar? Jaipur, Kota, Ajmer, Udaipur, Bhilwara?";
+                callData.lastQuestion = prompt;
+                console.log(`   🚫 Non-Rajasthan city rejected - asking for Rajasthan city`);
+                activeCalls.set(CallSid, callData);
+                await speak(twiml, prompt, { emotion: 'professional', callSid: CallSid });
+                return res.type("text/xml").send(twiml.toString());
             }
         }
 
