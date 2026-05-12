@@ -618,8 +618,14 @@ export async function getSmartAIResponse(callData) {
         }
         
         const resp = await client.chat.completions.create(requestParams);
-
         const llmEndTime = Date.now();
+        
+        // 💰 Track LLM usage
+        if (resp.usage) {
+            callData.usage.llmInputTokens += resp.usage.prompt_tokens || 0;
+            callData.usage.llmOutputTokens += resp.usage.completion_tokens || 0;
+        }
+
         console.log(`   ⚡ [PARALLEL] LLM completed in ${llmEndTime - llmStartTime}ms`);
 
         const raw = resp.choices?.[0]?.message?.content?.trim();

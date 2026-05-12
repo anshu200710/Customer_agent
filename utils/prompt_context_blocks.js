@@ -111,9 +111,14 @@ Function: capture_phone_number(customer_phone="9876543210")`;
 export const FINAL_CONFIRM_CONTEXT = `
 === 🎯 TASK: Final Confirmation ===
 All data collected. Ask: "Aur koi problem toh nahi machine mein? Save kar dun complaint?"
-• "Haan" → final_confirmation(confirmed=true) → submit_complaint()
+• "Haan" / "Theek hai" / "Kar do" → final_confirmation(confirmed=true, action="submit") → submit_complaint()
+• "Nahi, aur koi problem nahi, save kar do" → final_confirmation(confirmed=true, action="submit") → submit_complaint()
 • Mentions problem → add_additional_complaint(...) → Ask again
-• "Nahi" → final_confirmation(confirmed=false)
+• "Nahi" (only) → final_confirmation(confirmed=false, action="decline")
+
+**CRITICAL:** When user says "Haan", "Kar do", or "Save kar do", you MUST:
+1. Call submit_complaint()
+2. Set "ready_to_submit": true in your JSON output
 After submit: "Complaint register ho gayi. Engineer jaldi call karega. Dhanyavaad!"`;
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -147,9 +152,10 @@ ${functionNames}
 2. Customer provides NEW/DIFFERENT data for the same field
 3. You are using an UPDATE function (update_machine_number, update_complaint, etc.)
 
-**IF CUSTOMER SAYS "यही कर दो" / "save kar do" / "theek hai":**
+**IF CUSTOMER SAYS "यही कर दो" / "save kar do" / "theek hai" / "haan kar do":**
 → This is CONFIRMATION, not new data
 → Do NOT call capture_* functions again
+→ If in Final Confirmation state, call submit_complaint() and set ready_to_submit: true
 → Move to NEXT missing field or final confirmation`;
 }
 

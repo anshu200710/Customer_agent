@@ -19,6 +19,11 @@ const COMPLAINT_URL = `${BASE_URL}/ai_call_complaint.php`;
 const API_TIMEOUT = 12000;
 const API_HEADERS = { JCBSERVICEAPI: "MakeInJcb" };
 
+// ⚡ ZERO-WAIT INITIALIZATION CONSTANTS
+// For best performance, host these on a public CDN (S3/Vercel) to bypass ngrok fetch delays
+const GREETING_AUDIO_URL = `${process.env.PUBLIC_URL}/greetings/greeting_priya.wav`;
+const GREETING_TEXT = "Namaste, main Priya, Rajesh Motors se. Machine number bataiye.";
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    🔍 CHECK: Are all required fields collected?
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -286,6 +291,15 @@ async function speak(twiml, text, options = {}) {
             speed: options.speed || 1.0,
             callSid: options.callSid
         });
+
+        // 💰 Track TTS usage
+        if (options.callSid) {
+            const callData = activeCalls.get(options.callSid);
+            if (callData && callData.usage) {
+                callData.usage.ttsCharacters += formattedText.length;
+                callData.usage.ttsService = cartesiaResult?.success ? 'Cartesia' : 'Google TTS';
+            }
+        }
         
         const ttsEndTime = performanceLogger.getHighResTime();
         
@@ -483,6 +497,15 @@ async function sayFinal(twiml, text, options = {}) {
             speed: options.speed || 1.0,
             callSid: options.callSid
         });
+
+        // 💰 Track TTS usage
+        if (options.callSid) {
+            const callData = activeCalls.get(options.callSid);
+            if (callData && callData.usage) {
+                callData.usage.ttsCharacters += formattedText.length;
+                callData.usage.ttsService = cartesiaResult?.success ? 'Cartesia' : 'Google TTS';
+            }
+        }
         
         if (cartesiaResult && cartesiaResult.success) {
             ttsService = 'Cartesia';
@@ -620,90 +643,52 @@ router.post("/", async (req, res) => {
             lastAIResponse: null,         // Last AI response for debugging
             // Function execution tracking
             functionExecutionLog: [],     // Track all function calls with turn, name, args, result
+            
+            // 💰 USAGE TRACKING (for cost calculation)
+            usage: {
+                llmInputTokens: 0,
+                llmOutputTokens: 0,
+                ttsCharacters: 0,
+                ttsService: 'Cartesia',
+                durationSeconds: 0,
+                startTime: Date.now()
+            },
+
+            // ⚡ BACKGROUND LOOKUPS: Store promises to avoid blocking the first turn
+            lookupPromises: {
+                phoneLookup: callerPhone ? findMachineByPhone(callerPhone) : null,
+                machineLookup: preloadedMachineNo ? validateMachineNumber(preloadedMachineNo) : null
+            }
         };
 
-        // Phone-based pre-lookup (silent)
-        // COMMENTED OUT: This was causing 1-2 second delay on call pickup
-        // if (callerPhone) {
-        //     const pr = await findMachineByPhone(callerPhone);
-        //     if (pr.valid) {
-        //         callData._phoneData = pr.data;
-        //         console.log(`   📱 Phone lookup: ${pr.data.name}`);
-        //     }
-        // }
-
-        // Preloaded machine number validation
-        if (preloadedMachineNo) {
-            const v = await validateMachineNumber(preloadedMachineNo);
-            if (v.valid) {
-                callData.customerData = v.data;
-                callData.extractedData.machine_no = v.data.machineNo;
-                callData.extractedData.customer_name = v.data.name;
-                callData.pendingPhoneConfirm = true;
-            } else {
-                callData.extractedData.machine_no = null;
-            }
-        }
-
+        // ⚡ ZERO-WAIT INITIALIZATION
+        // We respond INSTANTLY with TwiML and move lookups to the background (next turn)
         activeCalls.set(CallSid, callData);
+        callData.needsInitialLookup = true; // Signal to /process to do lookups on first turn
 
-        // Use pre-generated greeting for new customers (FAST!)
-        // For returning customers with machine number, use personalized greeting
-        if (!callData.customerData) {
-            // ⚡ NEW CUSTOMER: Use pre-generated audio (instant - 50-100ms)
-            // Audio says: "Namaste, main Priya, Rajesh Motors se. Machine number bataiye."
-            const greetingUrl = `${process.env.PUBLIC_URL}/greetings/greeting_priya.wav`;
-            const greetingText = "Namaste, main Priya, Rajesh Motors se. Machine number bataiye.";
-            
-            // console.log(`\n${"═".repeat(60)}`);
-            // console.log(`⚡ [FAST GREETING] New Customer - Using Pre-Generated Audio`);
-            // console.log(`📁 File: greeting_priya.wav`);
-            // console.log(`🔗 URL: ${greetingUrl}`);
-            // console.log(`📝 Text: "${greetingText}"`);
-            // console.log(`⏱️  Expected Speed: 250-400ms (vs 1.5s dynamic TTS)`);
-            // console.log(`${"═".repeat(60)}\n`);
-            
-            callData.lastQuestion = greetingText;  // Track the question
-            
-            try {
-                // FALLBACK: Use dynamic TTS instead of pre-generated audio
-                // Pre-generated audio fails with ngrok free tier (requires browser verification)
-                // Dynamic TTS is more reliable and still fast with Cartesia
-                // console.log(`🔄 [GREETING] Using dynamic TTS (ngrok compatibility)`);
-                
-                await speak(twiml, greetingText, { 
-                    context: 'greeting', 
-                    emotion: 'friendly', 
-                    callSid: CallSid 
-                });
-                
-                // console.log(`✅ [GREETING] TwiML generated successfully`);
-                // console.log(`📤 [GREETING] Sending response to Twilio`);
-                
-                res.type("text/xml").send(twiml.toString());
-                
-            } catch (gatherErr) {
-                console.error(`❌ [GREETING ERROR] Failed to create gather:`, gatherErr.message);
-                console.error(`   Stack:`, gatherErr.stack);
-                throw gatherErr;
-            }
-            
-        } else {
-            // 🎯 RETURNING CUSTOMER: Use personalized greeting with their name
-            const greeting = `Namaste ${toTitleCase(callData.customerData.name.split(" ")[0])}, kya problem hai?`;
-            
-            // console.log(`\n${"═".repeat(60)}`);
-            // console.log(`🎯 [PERSONALIZED GREETING] Returning Customer`);
-            // console.log(`👤 Customer: ${callData.customerData.name}`);
-            // console.log(`🔢 Machine: ${callData.customerData.machineNo}`);
-            // console.log(`📝 Greeting: "${greeting}"`);
-            // console.log(`⏱️  Using Dynamic TTS (Cartesia)`);
-            // console.log(`${"═".repeat(60)}\n`);
-            
-            callData.lastQuestion = greeting;  // Track the question
-            await speak(twiml, greeting, { context: 'greeting', emotion: 'friendly', callSid: CallSid });
-            res.type("text/xml").send(twiml.toString());
-        }
+        // Use Gather to play the greeting and allow barge-in
+        const gather = twiml.gather({
+            input: "speech dtmf",
+            language: TTS_LANG,
+            speechTimeout: 1,
+            timeout: 5,
+            maxSpeechTime: 15,
+            action: "/voice/process",
+            method: "POST",
+            bargeIn: true // Allow user to speak over the greeting
+        });
+
+        // ⚡ INSTANT GREETING: Using pre-generated Cartesia audio
+        // This bypasses the 2-3s delay of dynamic TTS generation
+        gather.play(GREETING_AUDIO_URL);
+        
+        // Fallback if no input received
+        twiml.redirect("/voice/process");
+
+        callData.lastQuestion = GREETING_TEXT;
+        
+        // Send response immediately - NO AWAITS above this line
+        return res.type("text/xml").send(twiml.toString());
 
     } catch (err) {
         console.error(`\n${"═".repeat(60)}`);
@@ -760,6 +745,8 @@ router.post("/", async (req, res) => {
 router.post("/process", async (req, res) => {
     const { CallSid, SpeechResult, Digits } = req.body;
     const twiml = new VoiceResponse();
+    const turnStartTime = Date.now();
+    const turnTimings = { lookup: 0, ai: 0, tts: 0, total: 0 };
 
     try {
         const callData = activeCalls.get(CallSid);
@@ -767,6 +754,41 @@ router.post("/process", async (req, res) => {
             sayFinal(twiml, "Dobara call karein ji.");
             twiml.hangup();
             return res.type("text/xml").send(twiml.toString());
+        }
+
+        // ⚡ BACKGROUND INITIALIZATION (First turn only)
+        // Await background lookups started in the root route (parallelized)
+        if (callData.needsInitialLookup) {
+            const lookupStart = Date.now();
+            // console.log(`   ⏳ [BACKGROUND] Awaiting parallel lookups...`);
+            callData.needsInitialLookup = false;
+
+            const { phoneLookup, machineLookup } = callData.lookupPromises || {};
+
+            // Execute in parallel (or use existing promises)
+            const [phoneResult, machineResult] = await Promise.all([
+                phoneLookup || Promise.resolve({ valid: false }),
+                machineLookup || Promise.resolve({ valid: false })
+            ]);
+
+            // 1. Handle Phone-based lookup result
+            if (phoneResult.valid && !callData.customerData) {
+                callData._phoneData = phoneResult.data;
+                // console.log(`   📱 Phone lookup result: ${phoneResult.data.name}`);
+            }
+
+            // 2. Handle Machine number validation result
+            if (machineResult.valid && !callData.customerData) {
+                callData.customerData = machineResult.data;
+                callData.extractedData.customer_name = machineResult.data.name;
+                callData.pendingPhoneConfirm = true;
+                // console.log(`   🔢 Machine validation result: ${machineResult.data.name}`);
+            }
+
+            // Clear promises to free memory
+            delete callData.lookupPromises;
+            // console.log(`   ✅ [BACKGROUND] Initialization complete`);
+            turnTimings.lookup = Date.now() - lookupStart;
         }
 
         // Start turn timing
@@ -828,7 +850,8 @@ router.post("/process", async (req, res) => {
         if (callData.turnCount > 25) {
             // console.log(`   ⚠️  Turn limit reached (25) - ending call`);
             try {
-                logCallEnd(CallSid, 'turn_limit', callData.extractedData);
+                callData.usage.durationSeconds = Math.round((Date.now() - callData.usage.startTime) / 1000);
+                logCallEnd(CallSid, 'turn_limit', callData);
             } catch (err) {
                 console.log(`📞 CALL END | Reason: turn_limit`);
             }
@@ -855,7 +878,8 @@ router.post("/process", async (req, res) => {
             if (callData.silenceCount >= maxSilence) {
                 // console.log(`   ⚠️  Max silence reached - ending call`);
                 try {
-                    logCallEnd(CallSid, 'silence_timeout', callData.extractedData);
+                    callData.usage.durationSeconds = Math.round((Date.now() - callData.usage.startTime) / 1000);
+                    logCallEnd(CallSid, 'silence_timeout', callData);
                 } catch (err) {
                     console.log(`📞 CALL END | Reason: silence_timeout`);
                 }
@@ -1314,9 +1338,18 @@ router.post("/process", async (req, res) => {
         // ── STEP 13: Handle final confirm answer ─────────────────────
         if (callData.awaitingFinalConfirm) {
             const addingMore = extractAllComplaintTitles(userInput);
-            const isConfirming = isPositiveConfirmation(lo);
-            const isNegative = isNegativeConfirmation(lo);
+            // IMPROVED: Recognize "Haan", "Kar do", "Save kar do", etc. even if user says "Nahi" (to other problems)
+            const isConfirming = isPositiveConfirmation(lo) || /kar do|save|theek hai|okay|ok|thik hai|haan/.test(lo);
+            const isNegativeOnly = isNegativeConfirmation(lo) && !/kar do|save|theek hai|okay|ok|thik hai|haan/.test(lo);
             const wantsMore = isAddMoreProblem(lo);
+
+            console.log(`   📝 [FINAL CONFIRM] Confirming: ${isConfirming}, NegativeOnly: ${isNegativeOnly}, WantsMore: ${wantsMore}`);
+
+            if (isConfirming && !wantsMore && addingMore.length === 0) {
+                console.log(`   ✅ [FINAL CONFIRM] User confirmed via regex. Submitting...`);
+                callData.awaitingFinalConfirm = false;
+                return await handleSubmit(callData, twiml, res, CallSid);
+            }
 
             /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                🗂️  LEGACY CODE: Hardcoded Correction Detection (DISABLED)
@@ -1512,6 +1545,7 @@ router.post("/process", async (req, res) => {
                 
                 // ✅ CLEAN DEBUGGER - Log call end
                 try {
+                    callData.usage.durationSeconds = Math.round((Date.now() - callData.usage.startTime) / 1000);
                     logCallEnd(CallSid, 'user_declined', callData);
                 } catch (err) {
                     console.log(`📞 CALL END | Reason: user_declined`);
@@ -1529,7 +1563,7 @@ router.post("/process", async (req, res) => {
             // Fall through to LLM section below
         }
 
-        // ── STEP 14: LLM-FIRST APPROACH with Hardcoded Fallback ──────────────────────────────────────
+        // ── STEP 14: LLM-FIRST APPROACH ──────────────────────────────────────────────────────────────
         console.log(`   📊 Current State: ${JSON.stringify({
             machine: callData.extractedData.machine_no || "❌",
             complaint: callData.extractedData.complaint_title || "❌",
@@ -1539,16 +1573,38 @@ router.post("/process", async (req, res) => {
             missing: missing || "✅ READY",
         })}`);
 
-        if (!missing && machineValidated) {
-            // Safety net — shouldn't reach here normally (caught in step 9)
-            callData.awaitingFinalConfirm = true;
-            const fallbackPrompt = "Aur koi problem toh nahi? Save kar dun?";
-            callData.lastQuestion = fallbackPrompt;
-            console.log(`   ⚠️  Reached AI section with complete data - using hardcoded fallback`);
-            activeCalls.set(CallSid, callData);
-            await speak(twiml, fallbackPrompt, { emotion: 'professional' });
-            return res.type("text/xml").send(twiml.toString());
-        }
+        /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+           🗂️  LEGACY CODE: Hardcoded Safety Net (REMOVED)
+           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+           
+           This safety net was blocking the LLM flow and preventing submission.
+           
+           OLD CODE (REMOVED):
+           if (!missing && machineValidated) {
+               callData.awaitingFinalConfirm = true;
+               const fallbackPrompt = "Aur koi problem toh nahi? Save kar dun?";
+               await speak(twiml, fallbackPrompt);
+               return res.type("text/xml").send(twiml.toString());
+           }
+           
+           PROBLEM: This was returning early before LLM could be called, creating
+           an infinite loop where:
+           1. Safety net asks "Save kar dun?"
+           2. User says "haan"
+           3. awaitingFinalConfirm handler clears flag and passes to LLM
+           4. Hits safety net again (returns early, never reaches LLM)
+           5. Loop repeats - complaint never submitted
+           
+           SOLUTION: Removed this safety net. Now when all data is collected:
+           1. awaitingFinalConfirm is set in earlier steps (Step 9, etc.)
+           2. User confirms "haan"
+           3. Handler clears flag and falls through to LLM
+           4. LLM is called with function calling enabled
+           5. LLM detects confirmation and calls submit_complaint() function
+           6. Complaint is submitted to API
+           7. Call ends with success message
+           
+           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
         /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            🗂️  LEGACY CODE: STEP 15 Correction Detection (DISABLED)
@@ -1716,6 +1772,7 @@ router.post("/process", async (req, res) => {
         const llmStartTime = performanceLogger.getHighResTime();
         const aiResp = await getSmartAIResponse(callData);
         const llmEndTime = performanceLogger.getHighResTime();
+        turnTimings.ai = llmEndTime - llmStartTime;
         
         // Log LLM performance timing
         performanceLogger.logLLM(
@@ -2036,15 +2093,26 @@ router.post("/process", async (req, res) => {
 
         // Check again after AI — but route through final confirm if now complete
         const stillMissing = missingField(callData.extractedData);
-        if (!stillMissing && machineValidated) {
+        if (!stillMissing && machineValidated && !aiResp.readyToSubmit) {
             const finalQuestion = "Aur koi problem toh nahi machine mein? Save kar dun complaint?";
+            
+            // LOOP PREVENTION: If we already asked this question and the user responded, 
+            // don't just ask it again immediately. Let the LLM handle it or move on.
+            if (callData.lastQuestion === finalQuestion) {
+                console.log(`   ⚠️ [LOOP PREVENTION] Already asked final confirmation. Avoiding immediate re-prompt.`);
+                // If it's the second time we reach here without readyToSubmit, 
+                // the LLM is likely failing to set the flag. We'll force a check or ask differently.
+                const fallbackText = aiResp.text || "Theek hai, main aapki complaint register kar raha hun. Confirm hai na?";
+                await speak(twiml, fallbackText, { emotion: 'professional', callSid: CallSid });
+                return res.type("text/xml").send(twiml.toString());
+            }
+
             callData.awaitingFinalConfirm = true;
             callData.lastQuestion = finalQuestion;
             callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
             activeCalls.set(CallSid, callData);
             
-            // ⚡ PARALLEL: TTS will be called by speak() function
-            console.log(`   ⚡ [PARALLEL] Starting TTS generation for final question...`);
+            console.log(`   🤖 [FINAL_CONFIRM] Prompting: "${finalQuestion}"`);
             await speak(twiml, finalQuestion, { emotion: 'professional', callSid: CallSid });
             return res.type("text/xml").send(twiml.toString());
         }
@@ -2060,34 +2128,7 @@ router.post("/process", async (req, res) => {
         // If AI marked as ready to submit, do it immediately
         if (aiResp.readyToSubmit && machineValidated) {
             callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
-            const result = await submitComplaint(callData);
-            
-            // ✅ CLEAN DEBUGGER - Log submission (with error handling)
-            try {
-                logSubmission(callData, result);
-            } catch (err) {
-                console.log(`✅ COMPLAINT SUBMITTED | Machine: ${callData.extractedData.machine_no}`);
-            }
-            
-            const id = result.sapId || result.jobId || "";
-            
-            if (id) {
-                const idFormatted = formatNumberForTTS(id);
-                await sayFinal(twiml, `Humne aapki complaint register kar di hai. Number hai ${idFormatted}. Engineer jaldi contact karega. Dhanyavaad!`, { context: 'confirmation', emotion: 'professional' });
-            } else {
-                await sayFinal(twiml, "Humne aapki complaint register kar di hai. Engineer jaldi contact karega. Dhanyavaad!", { context: 'confirmation', emotion: 'professional' });
-            }
-            twiml.hangup();
-            
-            // ✅ CLEAN DEBUGGER - Log call end (with error handling)
-            try {
-                logCallEnd(CallSid, 'complaint_submitted', callData.extractedData);
-            } catch (err) {
-                console.log(`📞 CALL END | Reason: complaint_submitted`);
-            }
-            
-            activeCalls.delete(CallSid);
-            return res.type("text/xml").send(twiml.toString());
+            return await handleSubmit(callData, twiml, res, CallSid);
         }
 
         callData.messages.push({ role: "assistant", text: aiResp.text, timestamp: new Date() });
@@ -2098,7 +2139,11 @@ router.post("/process", async (req, res) => {
         
         // ✅ CLEAN DEBUGGER - Log the complete turn (with error handling)
         try {
-            logTurn(callData.turnCount, userInput, aiResp.text, callData, functionCalledName);
+            turnTimings.total = Date.now() - turnStartTime;
+            logTurn(callData.turnCount, userInput, aiResp.text, callData, { 
+                functionCalled: functionCalledName,
+                timings: turnTimings
+            });
         } catch (err) {
             console.log(`🔄 TURN ${callData.turnCount} | USER: "${userInput}" | AGENT: "${aiResp.text}"`);
         }
@@ -2115,6 +2160,7 @@ router.post("/process", async (req, res) => {
         } else {
             await speak(twiml, aiResp.text, { emotion: 'professional', callSid: CallSid });
         }
+        turnTimings.tts = Date.now() - ttsStartTime;
         
         const ttsEndTime = Date.now();
         // console.log(`   ⚡ [PARALLEL] TTS completed in ${ttsEndTime - ttsStartTime}ms`);
@@ -2144,7 +2190,10 @@ router.post("/process", async (req, res) => {
         
         // ✅ CLEAN DEBUGGER - Log call end (with error handling)
         try {
-            logCallEnd(CallSid, 'error', callData?.extractedData);
+            if (callData && callData.usage) {
+                callData.usage.durationSeconds = Math.round((Date.now() - callData.usage.startTime) / 1000);
+            }
+            logCallEnd(CallSid, 'error', callData);
         } catch (logErr) {
             console.log(`📞 CALL END | Reason: error`);
         }
@@ -2180,7 +2229,8 @@ async function handleSubmit(callData, twiml, res, CallSid) {
     
     // ✅ CLEAN DEBUGGER - Log call end (with error handling)
     try {
-        logCallEnd(CallSid, 'complaint_submitted', callData.extractedData);
+        callData.usage.durationSeconds = Math.round((Date.now() - callData.usage.startTime) / 1000);
+        logCallEnd(CallSid, 'complaint_submitted', callData);
     } catch (err) {
         console.log(`📞 CALL END | Reason: complaint_submitted`);
     }

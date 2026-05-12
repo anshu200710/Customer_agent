@@ -765,13 +765,15 @@ async function handleFinalConfirmation(args, callData) {
         // Customer confirmed to save/submit complaint
         console.log(`   ✅ [FINAL CONFIRM] Customer confirmed - ready to submit`);
         
-        // Clear final confirmation flag
+        // Clear final confirmation flag and set ready to submit
         callData.awaitingFinalConfirm = false;
+        callData.readyToSubmit = true; // NEW: Ensure flag is set for the route handler
         
         return {
             success: true,
             message: `Final confirmation received. Ready to submit complaint.`,
-            action: 'submit'
+            action: 'submit',
+            ready_to_submit: true
         };
     }
     
