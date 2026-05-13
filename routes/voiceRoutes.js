@@ -1528,7 +1528,7 @@ router.post("/process", async (req, res) => {
             
             // Only handle explicit negative confirmation (user clearly declining)
             // Everything else (corrections, side questions, etc.) goes to LLM
-            if (isNegative && !wantsMore && !isConfirming) {
+            if (isNegativeOnly && !wantsMore && !isConfirming) {
                 // User explicitly declined (said "nahi" without any other context)
                 console.log(`   ❌ User declined final confirmation - ending call`);
                 const declineMessage = "Theek hai. Agar kuch aur ho toh dobara call karein. Dhanyavaad!";

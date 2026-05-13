@@ -100,7 +100,7 @@ export async function generateSpeech(text, options = {}) {
         // console.log(`⚡ Speed: ${speed}`);
 
         // Add emotion tags based on context and emotion
-        const enhancedText = addEmotionTags(text, emotion, context);
+        const enhancedText = addEmotionTags(text, emotion, context, speed);
         
         // console.log(`🔄 Enhanced Text: "${enhancedText}"`);
         // console.log(`📏 Enhanced Text Length: ${enhancedText.length} characters`);
@@ -119,7 +119,9 @@ export async function generateSpeech(text, options = {}) {
         const payload = {
             ...CARTESIA_CONFIG,
             transcript: enhancedText,
-            speed: Math.max(0.5, Math.min(2.0, speed))  // Clamp speed between 0.5 and 2.0
+            generation_config: {
+                speed: Math.max(0.6, Math.min(1.5, speed))  // Valid range for Sonic 3 is 0.6 to 1.5
+            }
         };
 
         // console.log(`\n📦 [CARTESIA DEBUG] Final Payload:`);
@@ -312,9 +314,10 @@ export async function generateSpeech(text, options = {}) {
  * @param {string} text - Original text
  * @param {string} emotion - Target emotion
  * @param {string} context - Conversation context
- * @returns {string} Enhanced text with emotion tags
+ * @param {number} speed - Speech speed ratio
+ * @returns {string} Enhanced text with emotion and speed tags
  */
-function addEmotionTags(text, emotion, context) {
+function addEmotionTags(text, emotion, context, speed = 1.0) {
     // console.log(`\n🎭 [EMOTION PROCESSING] Step-by-Step Analysis`);
     // console.log(`📝 Input Text: "${text}"`);
     // console.log(`🔍 Target Emotion: ${emotion}`);
